@@ -28,7 +28,7 @@ class AgentGUI(ctk.CTk):
         self.on_remove_proxy = on_remove_proxy
         
         # Настройки окна
-        self.title("AutoBase Trustless Agent")
+        self.title("AutoBase Agent")
         self.geometry("900x650")
         self.resizable(True, True)
         
@@ -82,7 +82,7 @@ class AgentGUI(ctk.CTk):
         # Логотип
         self.logo_label = ctk.CTkLabel(
             self.sidebar_frame,
-            text="🤖\nTrustless\nAgent",
+            text="🤖\nAutoBase\nAgent",
             font=ctk.CTkFont(size=20, weight="bold")
         )
         self.logo_label.grid(row=0, column=0, padx=20, pady=(30, 20))
