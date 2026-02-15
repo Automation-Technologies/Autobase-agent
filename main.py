@@ -160,5 +160,9 @@ class Application:
 
 if __name__ == "__main__":
     app = Application()
-    app.run()
+    try:
+        app.run()
+    except KeyboardInterrupt:
+        logging.info("Приложение остановлено пользователем")
+        sys.exit(0)
 
