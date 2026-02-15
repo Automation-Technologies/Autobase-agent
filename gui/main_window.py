@@ -3,6 +3,7 @@
 """
 import customtkinter as ctk
 from typing import Callable, List, Dict
+from pathlib import Path
 
 
 class AgentGUI(ctk.CTk):
@@ -31,6 +32,11 @@ class AgentGUI(ctk.CTk):
         self.title("AutoBase Agent")
         self.geometry("900x650")
         self.resizable(True, True)
+        
+        # Устанавливаем иконку
+        icon_path = Path(__file__).parent.parent / "assets" / "icon.ico"
+        if icon_path.exists():
+            self.iconbitmap(str(icon_path))
         
         # Тема
         ctk.set_appearance_mode("Dark")
