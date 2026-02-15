@@ -1,0 +1,7 @@
+customtkinter==5.2.2
+websockets==12.0
+requests==2.32.4
+beautifulsoup4==4.12.3
+lxml==5.1.0
+rsa==4.9
+

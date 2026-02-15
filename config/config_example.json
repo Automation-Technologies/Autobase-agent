@@ -1,0 +1,5 @@
+{
+  "server_ip": "ws://autobase.example.com:8080",
+  "agent_token": "your-agent-token-uuid-here"
+}
+

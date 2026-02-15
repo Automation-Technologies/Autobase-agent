@@ -1,1 +1,13 @@
 ﻿.idea
+__pycache__/
+*.pyc
+*.pyo
+*.log
+config/config.json
+config/proxies.json
+maFiles/*.maFile
+logs/
+*.db
+.env
+venv/
+.vscode/
