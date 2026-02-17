@@ -49,10 +49,11 @@ class AgentGUI(TkinterDnD.Tk):
         # Тема
         ctk.set_appearance_mode("Dark")
         ctk.set_default_color_theme("blue")
-
+        
         # Фон корневого окна берём из темы CTk,
         # чтобы визуально совпадать с вариантом root=CTk.
         self._apply_root_background_from_theme()
+        self._bind_text_shortcuts()
         
         # Сетка
         self.grid_columnconfigure(1, weight=1)
@@ -209,4 +210,76 @@ class AgentGUI(TkinterDnD.Tk):
     def update_config_fields(self, server_ip: str, agent_token: str) -> None:
         """Обновить поля конфигурации."""
         self.frame_settings.set_fields(server_ip, agent_token)
+
+    # === Глобальные бинды для текстовых полей ===
+
+    def _bind_text_shortcuts(self) -> None:
+        """Назначить хоткеи Ctrl+V/C/X/A/Z/Y для всех CTkEntry."""
+        # paste / copy / cut
+        self.bind_all("<Control-v>", self._on_ctrl_v, add="+")
+        self.bind_all("<Control-V>", self._on_ctrl_v, add="+")
+        self.bind_all("<Control-c>", self._on_ctrl_c, add="+")
+        self.bind_all("<Control-C>", self._on_ctrl_c, add="+")
+        self.bind_all("<Control-x>", self._on_ctrl_x, add="+")
+        self.bind_all("<Control-X>", self._on_ctrl_x, add="+")
+
+        # select all
+        self.bind_all("<Control-a>", self._on_ctrl_a, add="+")
+        self.bind_all("<Control-A>", self._on_ctrl_a, add="+")
+
+        # undo / redo
+        self.bind_all("<Control-z>", self._on_ctrl_z, add="+")
+        self.bind_all("<Control-Z>", self._on_ctrl_z, add="+")
+        self.bind_all("<Control-y>", self._on_ctrl_y, add="+")
+        self.bind_all("<Control-Y>", self._on_ctrl_y, add="+")
+
+    def _is_entry_widget(self, widget) -> bool:
+        """Проверка, что виджет — CTkEntry (или его наследник)."""
+        return isinstance(widget, ctk.CTkEntry)
+
+    def _on_ctrl_v(self, event):
+        widget = event.widget
+        if not self._is_entry_widget(widget):
+            return
+        widget.event_generate("<<Paste>>")
+        return "break"
+
+    def _on_ctrl_c(self, event):
+        widget = event.widget
+        if not self._is_entry_widget(widget):
+            return
+        widget.event_generate("<<Copy>>")
+        return "break"
+
+    def _on_ctrl_x(self, event):
+        widget = event.widget
+        if not self._is_entry_widget(widget):
+            return
+        widget.event_generate("<<Cut>>")
+        return "break"
+
+    def _on_ctrl_a(self, event):
+        widget = event.widget
+        if not self._is_entry_widget(widget):
+            return
+        try:
+            widget.select_range(0, "end")
+            widget.icursor("end")
+        except Exception:
+            return
+        return "break"
+
+    def _on_ctrl_z(self, event):
+        widget = event.widget
+        if not self._is_entry_widget(widget):
+            return
+        widget.event_generate("<<Undo>>")
+        return "break"
+
+    def _on_ctrl_y(self, event):
+        widget = event.widget
+        if not self._is_entry_widget(widget):
+            return
+        widget.event_generate("<<Redo>>")
+        return "break"
 
