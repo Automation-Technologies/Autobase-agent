@@ -5,11 +5,16 @@
 import asyncio
 import logging
 from typing import Dict, Any, List
+
+from steampy.client import SteamClient
+from steampy.models import GameOptions
+
 from core.config_manager import ConfigManager
 from core.proxy_manager import ProxyManager
 from core.mafile_scanner import MaFileScanner
 from core.websocket_client import WebSocketClient
 from core.command_executor import CommandExecutor
+from core.ingestion_client import IngestionClient
 
 
 class Agent:
@@ -96,27 +101,127 @@ class Agent:
         self._log("✅ Агент остановлен")
     
     async def trigger_ingestion(self) -> None:
-        """Запустить процесс добавления новых аккаунтов."""
+        """Запустить процесс добавления новых аккаунтов (Smart Ingestion)."""
         self._log("🔍 Сканирование новых аккаунтов...")
-        
+
         # Сканируем maFiles
         accounts = self.mafile_scanner.scan_accounts()
-        logins = [acc["login"] for acc in accounts]
-        
-        if not logins:
+
+        if not accounts:
             self._log("⚠️ Нет аккаунтов в папке maFiles")
             return
-        
-        self._log(f"Найдено {len(logins)} аккаунтов")
-        
-        # TODO: Отправить CHECK_EXISTENCE на сервер
-        # TODO: Получить список новых аккаунтов
-        # TODO: Для каждого нового аккаунта:
-        #   - Залогиниться через steampy
-        #   - Получить баланс с retry
-        #   - Отправить REGISTER на сервер
-        
-        self._log("⚠️ Ingestion процесс требует реализации серверной части")
+
+        self._log(f"Найдено {len(accounts)} аккаунтов в maFiles")
+
+        # Конфиг для связи с AgentGateway (используем server_ip как HTTP URL)
+        server_url = self.config_manager.get_server_ip()
+        agent_token = self.config_manager.get_agent_token()
+
+        if not server_url or not agent_token:
+            self._log("❌ Ошибка: заполните Server IP и Agent Token в настройках")
+            return
+
+        ingestion_client = IngestionClient(server_url, agent_token)
+
+        # CHECK_EXISTENCE
+        check_payload = [
+            {"login": acc["login"]}
+            for acc in accounts
+        ]
+
+        self._log("📡 Отправка CHECK_EXISTENCE в AgentGateway...")
+        check_result = await ingestion_client.check_existence(check_payload)
+
+        existing = check_result.get("existing", [])
+        new_logins = check_result.get("new", [])
+
+        self._log(f"✅ Уже есть в системе: {len(existing)}")
+        self._log(f"🆕 Новых аккаунтов: {len(new_logins)}")
+
+        if not new_logins:
+            self._log("✅ Новых аккаунтов для регистрации нет")
+            return
+
+        # Для новых аккаунтов: получить баланс и зарегистрировать
+        to_register: List[Dict[str, Any]] = []
+
+        for acc in accounts:
+            login = acc["login"]
+            if login not in new_logins:
+                continue
+
+            self._log(f"💼 Получение баланса для {login}...")
+
+            try:
+                mafile_path = acc["filepath"]
+
+                # Инициализируем локальный SteamClient по maFile без пароля,
+                # используя сохраненную сессию и steamid
+                client = SteamClient(api_key="", username=login, password=None, steam_guard=None)
+
+                # Загружаем maFile
+                import json
+                from pathlib import Path
+
+                with open(Path(mafile_path), "r", encoding="utf-8") as f:
+                    ma_data = json.load(f)
+
+                client.steam_guard = {
+                    "steamid": ma_data.get("Session", {}).get("SteamID"),
+                }
+
+                # Проставляем куки сессии из maFile
+                session_data = ma_data.get("Session", {})
+                session_id = session_data.get("SessionID")
+                steam_login_secure = session_data.get("SteamLoginSecure")
+
+                if not session_id or not steam_login_secure:
+                    self._log(f"❌ maFile для {login} не содержит валидной сессии")
+                    continue
+
+                domain_community = "steamcommunity.com"
+                domain_store = "store.steampowered.com"
+
+                client._session.cookies.set("sessionid", session_id, domain=domain_community)
+                client._session.cookies.set("steamLoginSecure", steam_login_secure, domain=domain_community)
+                client._session.cookies.set("sessionid", session_id, domain=domain_store)
+                client._session.cookies.set("steamLoginSecure", steam_login_secure, domain=domain_store)
+
+                client.was_login_executed = True
+
+                # Получаем баланс
+                wallet_info = client.get_wallet_balance(convert_to_decimal=True)
+
+                balance = wallet_info.get("balance")
+                currency = wallet_info.get("wallet_currency")
+
+                self._log(f"💰 Баланс {login}: {balance} (currency={currency})")
+
+                to_register.append(
+                    {
+                        "login": login,
+                        "balance": balance,
+                        "currency": currency,
+                    }
+                )
+
+            except Exception as e:
+                self._log(f"❌ Ошибка при получении баланса для {login}: {e}")
+                continue
+
+        if not to_register:
+            self._log("⚠️ Не удалось подготовить ни одного аккаунта к регистрации")
+            return
+
+        self._log(f"📡 Отправка REGISTER для {len(to_register)} аккаунтов...")
+        register_result = await ingestion_client.register_accounts(to_register)
+
+        created = register_result.get("created", [])
+        skipped = register_result.get("skipped", [])
+
+        self._log(f"✅ Зарегистрировано: {len(created)}")
+        if skipped:
+            self._log(f"⚠️ Пропущено (уже существуют или ошибка): {len(skipped)}")
     
     def get_accounts_with_proxies(self) -> List[Dict[str, str]]:
         """Получить список аккаунтов с информацией о прокси."""
