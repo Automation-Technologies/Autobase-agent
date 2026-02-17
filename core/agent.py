@@ -256,7 +256,7 @@ class Agent:
                         "login": login,
                         "balance": balance,
                         "currency": currency_name,
-                        "bot_id": 1,
+                        "bot_id": 3,
                     }
                 )
 
