@@ -47,6 +47,10 @@ class AgentGUI(TkinterDnD.Tk):
         # Тема
         ctk.set_appearance_mode("Dark")
         ctk.set_default_color_theme("blue")
+
+        # Фон корневого окна берём из темы CTk,
+        # чтобы визуально совпадать с вариантом root=CTk.
+        self._apply_root_background_from_theme()
         
         # Сетка
         self.grid_columnconfigure(1, weight=1)
@@ -86,6 +90,22 @@ class AgentGUI(TkinterDnD.Tk):
         
         # Показываем дашборд по умолчанию
         self.show_dashboard()
+    
+    def _apply_root_background_from_theme(self) -> None:
+        """Установить фон root в соответствии с текущей темой CTk."""
+        theme = ctk.ThemeManager.theme
+        fg_color = theme["CTk"]["fg_color"]
+        appearance_mode = ctk.get_appearance_mode()
+
+        if isinstance(fg_color, (list, tuple)) and len(fg_color) >= 2:
+            if appearance_mode == "Dark":
+                bg_color = fg_color[1]
+            else:
+                bg_color = fg_color[0]
+        else:
+            bg_color = fg_color
+
+        self.configure(bg=bg_color)
     
     def _create_sidebar(self) -> None:
         """Создать боковую панель навигации."""
