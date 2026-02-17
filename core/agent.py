@@ -22,59 +22,63 @@ from steampy.models import Currency
 
 class Agent:
     """Основной класс агента."""
-    
+
     def __init__(
-        self,
-        config_path: str,
-        proxies_path: str,
-        mafiles_dir: str,
-        accounts_path: str
+            self,
+            config_path: str,
+            proxies_path: str,
+            mafiles_dir: str,
+            accounts_path: str
     ):
         self.config_manager = ConfigManager(config_path)
         self.proxy_manager = ProxyManager(proxies_path)
         self.mafile_scanner = MaFileScanner(mafiles_dir)
         self.account_manager = AccountManager(accounts_path)
-        
-        self.command_executor = CommandExecutor(mafiles_dir, self.proxy_manager)
-        
+
+        self.command_executor = CommandExecutor(
+            mafiles_dir,
+            self.proxy_manager,
+            self.account_manager
+        )
+
         self.websocket_client: WebSocketClient = None
         self.is_running = False
-        
+
         self.logger = logging.getLogger("Agent")
-        
+
         # Callback для UI
         self.on_status_change_callback = None
         self.on_log_callback = None
-    
+
     def set_callbacks(self, on_status_change, on_log) -> None:
         """Установить callback'и для UI."""
         self.on_status_change_callback = on_status_change
         self.on_log_callback = on_log
-    
+
     async def start(self) -> None:
         """Запустить агента (Worker Mode)."""
         if self.is_running:
             self._log("Агент уже запущен")
             return
-        
+
         self._log("Запуск агента...")
-        
+
         # Загружаем конфиг
         server_url = self.config_manager.get_server_ip()
         agent_token = self.config_manager.get_agent_token()
-        
+
         if not server_url or not agent_token:
             self._log("❌ Ошибка: Заполните настройки подключения")
             return
-        
+
         # Сканируем аккаунты
         logins = self.mafile_scanner.get_logins()
         if not logins:
             self._log("⚠️ Нет аккаунтов в папке maFiles")
             return
-        
+
         self._log(f"Найдено {len(logins)} аккаунтов")
-        
+
         # Создаем WebSocket клиент
         self.websocket_client = WebSocketClient(
             server_url,
@@ -82,29 +86,29 @@ class Agent:
             self._handle_command,
             self._on_connection_status_changed
         )
-        
+
         # Подключаемся
         try:
             await self.websocket_client.connect(logins)
         except Exception as e:
             self._log(f"❌ Ошибка подключения: {e}")
             self.is_running = False
-    
+
     async def stop(self) -> None:
         """Остановить агента."""
         if not self.is_running:
             self._log("Агент не запущен")
             return
-        
+
         self._log("Остановка агента...")
-        
+
         if self.websocket_client:
             await self.websocket_client.disconnect()
-        
+
         self.command_executor.cleanup()
         self.is_running = False
         self._log("✅ Агент остановлен")
-    
+
     async def trigger_ingestion(self) -> None:
         """Запустить процесс добавления новых аккаунтов (Smart Ingestion)."""
         self._log("🔍 Сканирование новых аккаунтов...")
@@ -165,7 +169,7 @@ class Agent:
             login = acc["login"]
             if login not in new_logins:
                 continue
-            
+
             # Пропускаем аккаунты, которые уже существуют в системе
             if login in existing:
                 self._log(f"⏭️ Пропускаем {login} - уже существует в системе")
@@ -198,7 +202,8 @@ class Agent:
                 identity_secret = ma_data.get("identity_secret")
 
                 if steamid is None or shared_secret is None or identity_secret is None:
-                    self._log(f"❌ maFile для {login} не содержит необходимых полей (steamid/shared_secret/identity_secret)")
+                    self._log(
+                        f"❌ maFile для {login} не содержит необходимых полей (steamid/shared_secret/identity_secret)")
                     continue
 
                 steam_guard_data = {
@@ -240,7 +245,7 @@ class Agent:
 
                 balance = wallet_info.get("balance")
                 currency_code = wallet_info.get("wallet_currency")
-                
+
                 currency_enum = Currency(currency_code)
                 currency_name = currency_enum.name
 
@@ -287,39 +292,39 @@ class Agent:
         self._log(f"✅ Зарегистрировано: {len(created)}")
         if skipped:
             self._log(f"⚠️ Пропущено (уже существуют или ошибка): {len(skipped)}")
-    
+
     def get_accounts_with_proxies(self) -> List[Dict[str, str]]:
         """Получить список аккаунтов с информацией о прокси."""
         accounts = self.mafile_scanner.scan_accounts()
-        
+
         for account in accounts:
             login = account["login"]
             proxy = self.proxy_manager.get_proxy_for_login(login)
             account["proxy"] = proxy
-        
+
         return accounts
-    
+
     def save_proxy(self, login: str, proxy: str) -> None:
         """Сохранить прокси для аккаунта."""
         self.proxy_manager.set_proxy_for_login(login, proxy)
         self._log(f"✅ Прокси сохранен для {login}")
-    
+
     def remove_proxy(self, login: str) -> None:
         """Удалить прокси для аккаунта."""
         self.proxy_manager.remove_proxy_for_login(login)
         self._log(f"✅ Прокси удален для {login} (Direct IP)")
-    
+
     def save_config(self, server_ip: str, agent_token: str) -> None:
         """Сохранить конфигурацию."""
         self.config_manager.update_server_ip(server_ip)
         self.config_manager.update_agent_token(agent_token)
         self._log("✅ Конфигурация сохранена")
-    
+
     def save_account_credentials(self, login: str, password: str, mafile_path: str, api_key: str) -> None:
         """Сохранить данные аккаунта (пароль, путь к maFile и API key)."""
         self.account_manager.set_account(login, password, mafile_path, api_key)
         self._log(f"✅ Данные аккаунта сохранены для {login}")
-    
+
     def delete_account(self, login: str) -> None:
         """Полностью удалить аккаунт: maFile, прокси и запись в accounts.json."""
         mafile_path: str = self.account_manager.get_mafile_path(login)
@@ -332,48 +337,47 @@ class Agent:
             path_obj: Path = Path(mafile_path)
             if path_obj.exists() and path_obj.is_file():
                 path_obj.unlink()
-        
+
         self.proxy_manager.remove_proxy_for_login(login)
         self.account_manager.remove_account(login)
         self._log(f"🗑️ Аккаунт {login} и все его данные удалены")
-    
+
     def get_config(self) -> Dict[str, str]:
         """Получить текущую конфигурацию."""
         return {
             "server_ip": self.config_manager.get_server_ip(),
             "agent_token": self.config_manager.get_agent_token()
         }
-    
+
     async def _handle_command(self, command: Dict[str, Any]) -> Dict[str, Any]:
         """Обработать команду от сервера."""
         cmd_type = command.get("cmd")
         login = command.get("login")
-        
+
         self._log(f"📥 Команда: {cmd_type} для {login}")
-        
+
         # Выполняем команду
         result = await self.command_executor.execute_command(command)
-        
+
         self._log(f"📤 Ответ: {result.get('status')}")
-        
+
         return result
-    
+
     def _on_connection_status_changed(self, connected: bool) -> None:
         """Callback изменения статуса подключения."""
         self.is_running = connected
-        
+
         if self.on_status_change_callback:
             self.on_status_change_callback(connected)
-        
+
         if connected:
             self._log("✅ Подключено к серверу")
         else:
             self._log("❌ Отключено от сервера")
-    
+
     def _log(self, message: str) -> None:
         """Логирование."""
         self.logger.info(message)
-        
+
         if self.on_log_callback:
             self.on_log_callback(message)
-
