@@ -8,16 +8,16 @@ from pathlib import Path
 from typing import Dict, Any, List
 
 import aiohttp
-from steampy.client import SteamClient
-from steampy.models import GameOptions
 
-from core.config_manager import ConfigManager
-from core.proxy_manager import ProxyManager
-from core.mafile_scanner import MaFileScanner
 from core.account_manager import AccountManager
-from core.websocket_client import WebSocketClient
 from core.command_executor import CommandExecutor
+from core.config_manager import ConfigManager
 from core.ingestion_client import IngestionClient
+from core.mafile_scanner import MaFileScanner
+from core.proxy_manager import ProxyManager
+from core.websocket_client import WebSocketClient
+from steampy.client import SteamClient
+from steampy.models import Currency
 
 
 class Agent:
@@ -239,15 +239,19 @@ class Agent:
                 )
 
                 balance = wallet_info.get("balance")
-                currency = wallet_info.get("wallet_currency")
+                currency_code = wallet_info.get("wallet_currency")
+                
+                currency_enum = Currency(currency_code)
+                currency_name = currency_enum.name
 
-                self._log(f"💰 Баланс {login}: {balance} (currency={currency})")
+                self._log(f"💰 Баланс {login}: {balance} (currency={currency_name})")
 
                 to_register.append(
                     {
                         "login": login,
                         "balance": balance,
-                        "currency": currency,
+                        "currency": currency_name,
+                        "bot_id": 1,
                     }
                 )
 
