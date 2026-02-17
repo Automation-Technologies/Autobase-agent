@@ -257,6 +257,7 @@ class Agent:
                         "balance": balance,
                         "currency": currency_name,
                         "bot_id": 3,
+                        "is_active": 0,
                     }
                 )
 
