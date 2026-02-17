@@ -56,7 +56,6 @@ class IngestionClient:
               "accounts": [
                 {
                   "login": "...",
-                  "steamid": "...",
                   "balance": 0.0,
                   "currency": "RUB"
                 }
