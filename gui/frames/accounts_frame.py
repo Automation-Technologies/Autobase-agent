@@ -2,42 +2,113 @@
 Фрейм управления аккаунтами и прокси.
 """
 import customtkinter as ctk
+from pathlib import Path
 from typing import Callable, List, Dict, Optional
+import json
+import shutil
+
+from tkinterdnd2 import DND_FILES  # type: ignore
 
 
 class AccountsFrame(ctk.CTkFrame):
-    """Управление аккаунтами и привязками прокси."""
+    """Управление аккаунтами, паролями и привязками прокси."""
     
-    def __init__(self, master, on_save_proxy: Callable, on_remove_proxy: Callable):
+    def __init__(
+        self,
+        master,
+        mafiles_dir: Path,
+        on_save_proxy: Callable,
+        on_remove_proxy: Callable,
+        on_save_account_credentials: Callable
+    ):
         super().__init__(master, fg_color="transparent")
         
+        self.mafiles_dir = mafiles_dir
         self.on_save_proxy = on_save_proxy
         self.on_remove_proxy = on_remove_proxy
+        self.on_save_account_credentials = on_save_account_credentials
         
         self.accounts: List[Dict[str, str]] = []
         self.selected_account: Optional[str] = None
         self.account_buttons: Dict[str, ctk.CTkButton] = {}
+
+        self.dropped_mafile_path: Optional[Path] = None
+        self.dropped_login: Optional[str] = None
         
         self._create_widgets()
     
     def _create_widgets(self) -> None:
         """Создать виджеты."""
-        # Заголовок
+        # Блок добавления аккаунтов
         title_label = ctk.CTkLabel(
             self,
-            text="Управление Прокси",
+            text="Добавление аккаунтов",
             font=ctk.CTkFont(size=22, weight="bold")
         )
         title_label.pack(pady=(0, 10))
         
-        # Инструкция
         info_label = ctk.CTkLabel(
+            self,
+            text="Перетащите файл .maFile в зону ниже и введите пароль аккаунта",
+            font=ctk.CTkFont(size=12),
+            text_color="gray"
+        )
+        info_label.pack(pady=(0, 10))
+
+        self.drop_frame = ctk.CTkFrame(self, corner_radius=10, border_width=2)
+        self.drop_frame.pack(padx=20, pady=(0, 10), fill="x")
+
+        self.drop_label = ctk.CTkLabel(
+            self.drop_frame,
+            text="🛈 Перетащите сюда .maFile из Steam Desktop Authenticator",
+            font=ctk.CTkFont(size=13)
+        )
+        self.drop_label.pack(pady=20, padx=20)
+
+        self.drop_frame.drop_target_register(DND_FILES)
+        self.drop_frame.dnd_bind("<<Drop>>", self._on_drop_mafile)
+
+        password_frame = ctk.CTkFrame(self, fg_color="transparent")
+        password_frame.pack(padx=20, pady=(0, 10), fill="x")
+
+        ctk.CTkLabel(
+            password_frame,
+            text="Пароль аккаунта:",
+            font=ctk.CTkFont(size=12)
+        ).pack(side="left", padx=(0, 10))
+
+        self.password_entry = ctk.CTkEntry(
+            password_frame,
+            show="*",
+            font=ctk.CTkFont(size=12)
+        )
+        self.password_entry.pack(side="left", fill="x", expand=True)
+
+        self.add_account_btn = ctk.CTkButton(
+            self,
+            text="➕ Сохранить аккаунт",
+            command=self._save_account_credentials,
+            fg_color="#00AA00",
+            hover_color="#008800",
+            width=180
+        )
+        self.add_account_btn.pack(pady=(0, 20))
+
+        # Блок управления прокси
+        proxy_title_label = ctk.CTkLabel(
+            self,
+            text="Управление Прокси",
+            font=ctk.CTkFont(size=20, weight="bold")
+        )
+        proxy_title_label.pack(pady=(0, 10))
+        
+        proxy_info_label = ctk.CTkLabel(
             self,
             text="Выберите аккаунт из списка ниже, чтобы настроить прокси",
             font=ctk.CTkFont(size=12),
             text_color="gray"
         )
-        info_label.pack(pady=(0, 20))
+        proxy_info_label.pack(pady=(0, 20))
         
         # Список аккаунтов (Scrollable Frame)
         accounts_label = ctk.CTkLabel(
@@ -110,12 +181,10 @@ class AccountsFrame(ctk.CTkFrame):
         """
         self.accounts = accounts
         
-        # Очищаем список
         for widget in self.scroll_frame.winfo_children():
             widget.destroy()
         self.account_buttons.clear()
         
-        # Заполняем список
         if not accounts:
             no_accounts_label = ctk.CTkLabel(
                 self.scroll_frame,
@@ -130,11 +199,8 @@ class AccountsFrame(ctk.CTkFrame):
             login = account["login"]
             proxy = account.get("proxy")
             
-            # Статус прокси
             status_text = "🌐 Proxy" if proxy else "🏠 Direct IP"
-            status_color = "#00AA00" if proxy else "#888888"
             
-            # Кнопка аккаунта
             btn_frame = ctk.CTkFrame(self.scroll_frame, fg_color="transparent")
             btn_frame.pack(fill="x", pady=2)
             
@@ -155,12 +221,10 @@ class AccountsFrame(ctk.CTkFrame):
         self.selected_account = login
         self.selected_label.configure(text=f"Редактирование: {login}")
         
-        # Заполняем поле прокси
         self.proxy_entry.delete(0, "end")
         if proxy:
             self.proxy_entry.insert(0, proxy)
         
-        # Подсвечиваем выбранную кнопку
         for btn_login, btn in self.account_buttons.items():
             if btn_login == login:
                 btn.configure(fg_color="#0066CC")
@@ -184,4 +248,65 @@ class AccountsFrame(ctk.CTkFrame):
             return
         
         self.on_remove_proxy(self.selected_account)
+    
+    def _on_drop_mafile(self, event) -> None:
+        """Обработчик перетаскивания maFile в зону drop."""
+        raw_data = event.data
+        if not raw_data:
+            return
 
+        cleaned = raw_data.strip()
+        if cleaned.startswith("{") and cleaned.endswith("}"):
+            cleaned = cleaned[1:-1]
+
+        source_path = Path(cleaned)
+        if source_path.suffix != ".maFile":
+            return
+
+        self.mafiles_dir.mkdir(parents=True, exist_ok=True)
+        destination_path = self.mafiles_dir / source_path.name
+
+        shutil.copy2(str(source_path), str(destination_path))
+
+        try:
+            with open(destination_path, "r", encoding="utf-8") as f:
+                data = json.load(f)
+        except Exception:
+            self.drop_label.configure(text="❌ Не удалось прочитать maFile")
+            return
+
+        login = data.get("account_name")
+        if not login:
+            self.drop_label.configure(text="❌ maFile не содержит account_name")
+            return
+
+        self.dropped_mafile_path = destination_path
+        self.dropped_login = login
+
+        self.drop_label.configure(
+            text=f"✅ Файл: {destination_path.name}  •  Логин: {login}"
+        )
+    
+    def _save_account_credentials(self) -> None:
+        """Сохранить пароль и maFile для добавленного аккаунта."""
+        if self.dropped_mafile_path is None:
+            return
+        if self.dropped_login is None:
+            return
+
+        password = self.password_entry.get()
+        if not password:
+            return
+
+        self.on_save_account_credentials(
+            self.dropped_login,
+            password,
+            str(self.dropped_mafile_path)
+        )
+
+        self.password_entry.delete(0, "end")
+        self.dropped_mafile_path = None
+        self.dropped_login = None
+        self.drop_label.configure(
+            text="🛈 Перетащите сюда .maFile из Steam Desktop Authenticator"
+        )

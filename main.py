@@ -36,23 +36,27 @@ class Application:
         self.base_dir = Path(__file__).parent
         self.config_path = self.base_dir / "config" / "config.json"
         self.proxies_path = self.base_dir / "config" / "proxies.json"
+        self.accounts_path = self.base_dir / "config" / "accounts.json"
         self.mafiles_dir = self.base_dir / "maFiles"
         
         # Агент
         self.agent = Agent(
             str(self.config_path),
             str(self.proxies_path),
-            str(self.mafiles_dir)
+            str(self.mafiles_dir),
+            str(self.accounts_path)
         )
         
         # GUI
         self.gui = AgentGUI(
+            mafiles_dir=str(self.mafiles_dir),
             on_start_agent=self.start_agent,
             on_stop_agent=self.stop_agent,
             on_trigger_ingestion=self.trigger_ingestion,
             on_save_config=self.save_config,
             on_save_proxy=self.save_proxy,
-            on_remove_proxy=self.remove_proxy
+            on_remove_proxy=self.remove_proxy,
+            on_save_account_credentials=self.save_account_credentials
         )
         
         # Настраиваем callback'и агента
@@ -140,6 +144,13 @@ class Application:
         self.agent.remove_proxy(login)
         
         # Обновляем список аккаунтов
+        accounts = self.agent.get_accounts_with_proxies()
+        self.gui.update_accounts_list(accounts)
+    
+    def save_account_credentials(self, login: str, password: str, mafile_path: str) -> None:
+        """Сохранить данные аккаунта и обновить список в UI."""
+        self.agent.save_account_credentials(login, password, mafile_path)
+        
         accounts = self.agent.get_accounts_with_proxies()
         self.gui.update_accounts_list(accounts)
     

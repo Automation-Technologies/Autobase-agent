@@ -5,28 +5,34 @@ import customtkinter as ctk
 from typing import Callable, List, Dict
 from pathlib import Path
 
+from tkinterdnd2 import TkinterDnD  # type: ignore
 
-class AgentGUI(ctk.CTk):
+
+class AgentGUI(TkinterDnD.Tk):
     """Главное окно приложения."""
     
     def __init__(
         self,
+        mafiles_dir: str,
         on_start_agent: Callable,
         on_stop_agent: Callable,
         on_trigger_ingestion: Callable,
         on_save_config: Callable,
         on_save_proxy: Callable,
-        on_remove_proxy: Callable
+        on_remove_proxy: Callable,
+        on_save_account_credentials: Callable
     ):
         super().__init__()
         
         # Callbacks
+        self.mafiles_dir = Path(mafiles_dir)
         self.on_start_agent = on_start_agent
         self.on_stop_agent = on_stop_agent
         self.on_trigger_ingestion = on_trigger_ingestion
         self.on_save_config = on_save_config
         self.on_save_proxy = on_save_proxy
         self.on_remove_proxy = on_remove_proxy
+        self.on_save_account_credentials = on_save_account_credentials
         
         # Настройки окна
         self.title("AutoBase Agent")
@@ -67,8 +73,10 @@ class AgentGUI(ctk.CTk):
         
         self.frame_accounts = AccountsFrame(
             self.main_frame,
+            mafiles_dir=self.mafiles_dir,
             on_save_proxy=self.on_save_proxy,
-            on_remove_proxy=self.on_remove_proxy
+            on_remove_proxy=self.on_remove_proxy,
+            on_save_account_credentials=self.on_save_account_credentials
         )
         
         self.frame_settings = SettingsFrame(
