@@ -153,47 +153,55 @@ class Agent:
             if login not in new_logins:
                 continue
 
-            self._log(f"💼 Получение баланса для {login}...")
+            self._log(f"💼 Получение баланса для {login} через логин по паролю и maFile...")
 
+            client = None
             try:
-                mafile_path = acc["filepath"]
-
-                # Инициализируем локальный SteamClient по maFile без пароля,
-                # используя сохраненную сессию и steamid
-                client = SteamClient(api_key="", username=login, password=None, steam_guard=None)
-
-                # Загружаем maFile
                 import json
                 from pathlib import Path
 
+                password = self.account_manager.get_password(login)
+                if password is None:
+                    self._log(f"❌ В accounts.json нет пароля для {login}, пропускаем аккаунт")
+                    continue
+
+                mafile_path = acc["filepath"]
                 with open(Path(mafile_path), "r", encoding="utf-8") as f:
                     ma_data = json.load(f)
 
-                client.steam_guard = {
-                    "steamid": ma_data.get("Session", {}).get("SteamID"),
-                }
+                steamid = ma_data.get("Session", {}).get("SteamID")
+                shared_secret = ma_data.get("shared_secret")
+                identity_secret = ma_data.get("identity_secret")
 
-                # Проставляем куки сессии из maFile
-                session_data = ma_data.get("Session", {})
-                session_id = session_data.get("SessionID")
-                steam_login_secure = session_data.get("SteamLoginSecure")
-
-                if not session_id or not steam_login_secure:
-                    self._log(f"❌ maFile для {login} не содержит валидной сессии")
+                if steamid is None or shared_secret is None or identity_secret is None:
+                    self._log(f"❌ maFile для {login} не содержит необходимых полей (steamid/shared_secret/identity_secret)")
                     continue
 
-                domain_community = "steamcommunity.com"
-                domain_store = "store.steampowered.com"
+                steam_guard_data = {
+                    "steamid": steamid,
+                    "shared_secret": shared_secret,
+                    "identity_secret": identity_secret,
+                }
 
-                client._session.cookies.set("sessionid", session_id, domain=domain_community)
-                client._session.cookies.set("steamLoginSecure", steam_login_secure, domain=domain_community)
-                client._session.cookies.set("sessionid", session_id, domain=domain_store)
-                client._session.cookies.set("steamLoginSecure", steam_login_secure, domain=domain_store)
+                client = SteamClient(api_key="")
 
-                client.was_login_executed = True
+                loop = asyncio.get_event_loop()
+                await loop.run_in_executor(
+                    None,
+                    client.login,
+                    login,
+                    password,
+                    steam_guard_data,
+                )
 
-                # Получаем баланс
-                wallet_info = client.get_wallet_balance(convert_to_decimal=True)
+                is_alive = await loop.run_in_executor(None, client.is_session_alive)
+                if not is_alive:
+                    self._log(f"❌ Сессия неактивна после логина для {login}")
+                    continue
+
+                wallet_info = await loop.run_in_executor(
+                    None, client.get_wallet_balance, True
+                )
 
                 balance = wallet_info.get("balance")
                 currency = wallet_info.get("wallet_currency")
@@ -211,6 +219,12 @@ class Agent:
             except Exception as e:
                 self._log(f"❌ Ошибка при получении баланса для {login}: {e}")
                 continue
+            finally:
+                if client is not None and hasattr(client, "logout"):
+                    try:
+                        await asyncio.get_event_loop().run_in_executor(None, client.logout)
+                    except Exception:
+                        pass
 
         if not to_register:
             self._log("⚠️ Не удалось подготовить ни одного аккаунта к регистрации")
@@ -253,9 +267,9 @@ class Agent:
         self.config_manager.update_agent_token(agent_token)
         self._log("✅ Конфигурация сохранена")
     
-    def save_account_credentials(self, login: str, password: str, mafile_path: str) -> None:
-        """Сохранить данные аккаунта (пароль и путь к maFile)."""
-        self.account_manager.set_account(login, password, mafile_path)
+    def save_account_credentials(self, login: str, password: str, mafile_path: str, api_key: str) -> None:
+        """Сохранить данные аккаунта (пароль, путь к maFile и API key)."""
+        self.account_manager.set_account(login, password, mafile_path, api_key)
         self._log(f"✅ Данные аккаунта сохранены для {login}")
     
     def get_config(self) -> Dict[str, str]:

@@ -7,7 +7,7 @@ from typing import Dict, Optional
 
 
 class AccountManager:
-    """Управление данными аккаунтов."""
+    """Управление данными аккаунтов (пароль, путь к maFile, API key)."""
 
     def __init__(self, storage_path: str):
         self.storage_file = Path(storage_path)
@@ -31,12 +31,13 @@ class AccountManager:
         with open(self.storage_file, "w", encoding="utf-8") as f:
             json.dump(data, f, ensure_ascii=False, indent=2)
 
-    def set_account(self, login: str, password: str, mafile_path: str) -> None:
+    def set_account(self, login: str, password: str, mafile_path: str, api_key: str) -> None:
         """Создать или обновить запись аккаунта."""
         storage = self._read_storage()
         storage[login] = {
             "password": password,
             "mafile_path": mafile_path,
+            "api_key": api_key,
         }
         self._write_storage(storage)
 
@@ -55,6 +56,14 @@ class AccountManager:
         if account is None:
             return None
         return account.get("mafile_path")
+
+    def get_api_key(self, login: str) -> Optional[str]:
+        """Получить API key по логину."""
+        storage = self._read_storage()
+        account = storage.get(login)
+        if account is None:
+            return None
+        return account.get("api_key")
 
     def remove_account(self, login: str) -> None:
         """Удалить запись аккаунта."""

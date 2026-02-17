@@ -11,7 +11,7 @@ from tkinterdnd2 import DND_FILES  # type: ignore
 
 
 class AccountsFrame(ctk.CTkFrame):
-    """Управление аккаунтами, паролями и привязками прокси."""
+    """Управление аккаунтами, паролями, API key и привязками прокси."""
     
     def __init__(
         self,
@@ -49,7 +49,7 @@ class AccountsFrame(ctk.CTkFrame):
         
         info_label = ctk.CTkLabel(
             self,
-            text="Перетащите файл .maFile в зону ниже и введите пароль аккаунта",
+            text="Перетащите файл .maFile и введите пароль аккаунта и API key",
             font=ctk.CTkFont(size=12),
             text_color="gray"
         )
@@ -69,7 +69,7 @@ class AccountsFrame(ctk.CTkFrame):
         self.drop_frame.dnd_bind("<<Drop>>", self._on_drop_mafile)
 
         password_frame = ctk.CTkFrame(self, fg_color="transparent")
-        password_frame.pack(padx=20, pady=(0, 10), fill="x")
+        password_frame.pack(padx=20, pady=(0, 5), fill="x")
 
         ctk.CTkLabel(
             password_frame,
@@ -83,6 +83,21 @@ class AccountsFrame(ctk.CTkFrame):
             font=ctk.CTkFont(size=12)
         )
         self.password_entry.pack(side="left", fill="x", expand=True)
+
+        api_key_frame = ctk.CTkFrame(self, fg_color="transparent")
+        api_key_frame.pack(padx=20, pady=(0, 10), fill="x")
+
+        ctk.CTkLabel(
+            api_key_frame,
+            text="API Key:",
+            font=ctk.CTkFont(size=12)
+        ).pack(side="left", padx=(0, 10))
+
+        self.api_key_entry = ctk.CTkEntry(
+            api_key_frame,
+            font=ctk.CTkFont(size=12)
+        )
+        self.api_key_entry.pack(side="left", fill="x", expand=True)
 
         self.add_account_btn = ctk.CTkButton(
             self,
@@ -288,7 +303,7 @@ class AccountsFrame(ctk.CTkFrame):
         )
     
     def _save_account_credentials(self) -> None:
-        """Сохранить пароль и maFile для добавленного аккаунта."""
+        """Сохранить пароль, API key и maFile для добавленного аккаунта."""
         if self.dropped_mafile_path is None:
             return
         if self.dropped_login is None:
@@ -298,13 +313,19 @@ class AccountsFrame(ctk.CTkFrame):
         if not password:
             return
 
+        api_key = self.api_key_entry.get()
+        if not api_key:
+            return
+
         self.on_save_account_credentials(
             self.dropped_login,
             password,
-            str(self.dropped_mafile_path)
+            str(self.dropped_mafile_path),
+            api_key,
         )
 
         self.password_entry.delete(0, "end")
+        self.api_key_entry.delete(0, "end")
         self.dropped_mafile_path = None
         self.dropped_login = None
         self.drop_label.configure(
