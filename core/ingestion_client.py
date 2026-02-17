@@ -42,6 +42,13 @@ class IngestionClient:
 
         async with aiohttp.ClientSession() as session:
             async with session.post(url, json=payload) as resp:
+                if resp.status == 401:
+                    raise aiohttp.ClientResponseError(
+                        request_info=resp.request_info,
+                        history=resp.history,
+                        status=401,
+                        message="Unauthorized"
+                    )
                 data = await resp.json()
                 return data
 
@@ -75,6 +82,13 @@ class IngestionClient:
 
         async with aiohttp.ClientSession() as session:
             async with session.post(url, json=payload) as resp:
+                if resp.status == 401:
+                    raise aiohttp.ClientResponseError(
+                        request_info=resp.request_info,
+                        history=resp.history,
+                        status=401,
+                        message="Unauthorized"
+                    )
                 data = await resp.json()
                 return data
 

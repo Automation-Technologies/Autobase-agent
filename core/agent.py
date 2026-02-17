@@ -7,6 +7,7 @@ import logging
 from pathlib import Path
 from typing import Dict, Any, List
 
+import aiohttp
 from steampy.client import SteamClient
 from steampy.models import GameOptions
 
@@ -134,7 +135,13 @@ class Agent:
         ]
 
         self._log("📡 Отправка CHECK_EXISTENCE в AgentGateway...")
-        check_result = await ingestion_client.check_existence(check_payload)
+        try:
+            check_result = await ingestion_client.check_existence(check_payload)
+        except aiohttp.ClientResponseError as e:
+            if e.status == 401:
+                self._log("❌ Токен не рабочий")
+                return
+            raise
 
         existing = check_result.get("existing", [])
         new_logins = check_result.get("new", [])
@@ -248,7 +255,13 @@ class Agent:
             return
 
         self._log(f"📡 Отправка REGISTER для {len(to_register)} аккаунтов...")
-        register_result = await ingestion_client.register_accounts(to_register)
+        try:
+            register_result = await ingestion_client.register_accounts(to_register)
+        except aiohttp.ClientResponseError as e:
+            if e.status == 401:
+                self._log("❌ Токен не рабочий")
+                return
+            raise
 
         created = register_result.get("created", [])
         skipped = register_result.get("skipped", [])
