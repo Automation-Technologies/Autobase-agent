@@ -4,7 +4,7 @@
 """
 import json
 from pathlib import Path
-from typing import List, Dict
+from typing import List, Dict, Optional
 
 
 class MaFileScanner:
@@ -22,7 +22,7 @@ class MaFileScanner:
             self.mafiles_dir.mkdir(parents=True, exist_ok=True)
             return []
         
-        accounts = []
+        accounts: List[Dict[str, str]] = []
         for mafile_path in self.mafiles_dir.glob("*.maFile"):
             try:
                 with open(mafile_path, 'r', encoding='utf-8') as f:
@@ -32,7 +32,7 @@ class MaFileScanner:
                         "steamid": data.get("Session", {}).get("SteamID", "Unknown"),
                         "filepath": str(mafile_path)
                     })
-            except Exception as e:
+            except Exception:
                 # Пропускаем битые файлы
                 continue
         
@@ -42,4 +42,16 @@ class MaFileScanner:
         """Получить список логинов."""
         accounts = self.scan_accounts()
         return [acc["login"] for acc in accounts]
+
+    def get_mafile_path_by_login(self, login: str) -> Optional[Path]:
+        """
+        Найти путь к maFile по логину, просканировав папку maFiles.
+        """
+        accounts: List[Dict[str, str]] = self.scan_accounts()
+        for account in accounts:
+            account_login: str = account.get("login")
+            if account_login == login:
+                filepath: str = account.get("filepath")
+                return Path(filepath)
+        return None
 

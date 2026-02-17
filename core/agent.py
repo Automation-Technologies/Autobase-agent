@@ -166,6 +166,11 @@ class Agent:
                     self._log(f"❌ В accounts.json нет пароля для {login}, пропускаем аккаунт")
                     continue
 
+                api_key = self.account_manager.get_api_key(login)
+                if api_key is None:
+                    self._log(f"❌ В accounts.json нет API key для {login}, пропускаем аккаунт")
+                    continue
+
                 mafile_path = acc["filepath"]
                 with open(Path(mafile_path), "r", encoding="utf-8") as f:
                     ma_data = json.load(f)
@@ -184,7 +189,18 @@ class Agent:
                     "identity_secret": identity_secret,
                 }
 
-                client = SteamClient(api_key="")
+                proxy_string = self.proxy_manager.get_proxy_for_login(login)
+                if proxy_string is None or proxy_string == "":
+                    self._log(f"🌐 Для {login} прокси не задан, логинимся по прямому IP")
+                    client_proxies = None
+                else:
+                    self._log(f"🌐 Для {login} используется прокси: {proxy_string}")
+                    client_proxies = {
+                        "http": proxy_string,
+                        "https": proxy_string,
+                    }
+
+                client = SteamClient(api_key, proxies=client_proxies)
 
                 loop = asyncio.get_event_loop()
                 await loop.run_in_executor(
@@ -275,9 +291,14 @@ class Agent:
     
     def delete_account(self, login: str) -> None:
         """Полностью удалить аккаунт: maFile, прокси и запись в accounts.json."""
-        mafile_path = self.account_manager.get_mafile_path(login)
-        if mafile_path is not None:
-            path_obj = Path(mafile_path)
+        mafile_path: str = self.account_manager.get_mafile_path(login)
+        if mafile_path is None:
+            path_obj_from_scanner: Path = self.mafile_scanner.get_mafile_path_by_login(login)
+            if path_obj_from_scanner is not None:
+                if path_obj_from_scanner.exists() and path_obj_from_scanner.is_file():
+                    path_obj_from_scanner.unlink()
+        else:
+            path_obj: Path = Path(mafile_path)
             if path_obj.exists() and path_obj.is_file():
                 path_obj.unlink()
         
