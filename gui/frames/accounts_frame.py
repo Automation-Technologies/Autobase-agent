@@ -19,7 +19,8 @@ class AccountsFrame(ctk.CTkFrame):
         mafiles_dir: Path,
         on_save_proxy: Callable,
         on_remove_proxy: Callable,
-        on_save_account_credentials: Callable
+        on_save_account_credentials: Callable,
+        on_delete_account: Callable
     ):
         super().__init__(master, fg_color="transparent")
         
@@ -27,6 +28,7 @@ class AccountsFrame(ctk.CTkFrame):
         self.on_save_proxy = on_save_proxy
         self.on_remove_proxy = on_remove_proxy
         self.on_save_account_credentials = on_save_account_credentials
+        self.on_delete_account = on_delete_account
         
         self.accounts: List[Dict[str, str]] = []
         self.selected_account: Optional[str] = None
@@ -73,7 +75,7 @@ class AccountsFrame(ctk.CTkFrame):
 
         ctk.CTkLabel(
             password_frame,
-            text="Пароль аккаунта:",
+            text="Пароль:",
             font=ctk.CTkFont(size=12)
         ).pack(side="left", padx=(0, 10))
 
@@ -188,6 +190,16 @@ class AccountsFrame(ctk.CTkFrame):
             width=180
         )
         self.remove_btn.pack(side="left", padx=5)
+
+        self.delete_account_btn = ctk.CTkButton(
+            buttons_frame,
+            text="❌ Удалить аккаунт",
+            command=self._delete_account,
+            fg_color="#880000",
+            hover_color="#660000",
+            width=180
+        )
+        self.delete_account_btn.pack(side="left", padx=5)
     
     def update_accounts(self, accounts: List[Dict[str, str]]) -> None:
         """
@@ -263,6 +275,18 @@ class AccountsFrame(ctk.CTkFrame):
             return
         
         self.on_remove_proxy(self.selected_account)
+
+    def _delete_account(self) -> None:
+        """Удалить выбранный аккаунт и все его данные."""
+        if not self.selected_account:
+            return
+
+        login = self.selected_account
+        self.on_delete_account(login)
+
+        self.selected_account = None
+        self.proxy_entry.delete(0, "end")
+        self.selected_label.configure(text="Выберите аккаунт из списка выше")
     
     def _on_drop_mafile(self, event) -> None:
         """Обработчик перетаскивания maFile в зону drop."""

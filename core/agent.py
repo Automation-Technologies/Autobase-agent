@@ -4,6 +4,7 @@
 """
 import asyncio
 import logging
+from pathlib import Path
 from typing import Dict, Any, List
 
 from steampy.client import SteamClient
@@ -271,6 +272,18 @@ class Agent:
         """Сохранить данные аккаунта (пароль, путь к maFile и API key)."""
         self.account_manager.set_account(login, password, mafile_path, api_key)
         self._log(f"✅ Данные аккаунта сохранены для {login}")
+    
+    def delete_account(self, login: str) -> None:
+        """Полностью удалить аккаунт: maFile, прокси и запись в accounts.json."""
+        mafile_path = self.account_manager.get_mafile_path(login)
+        if mafile_path is not None:
+            path_obj = Path(mafile_path)
+            if path_obj.exists() and path_obj.is_file():
+                path_obj.unlink()
+        
+        self.proxy_manager.remove_proxy_for_login(login)
+        self.account_manager.remove_account(login)
+        self._log(f"🗑️ Аккаунт {login} и все его данные удалены")
     
     def get_config(self) -> Dict[str, str]:
         """Получить текущую конфигурацию."""

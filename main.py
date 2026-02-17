@@ -56,7 +56,8 @@ class Application:
             on_save_config=self.save_config,
             on_save_proxy=self.save_proxy,
             on_remove_proxy=self.remove_proxy,
-            on_save_account_credentials=self.save_account_credentials
+            on_save_account_credentials=self.save_account_credentials,
+            on_delete_account=self.delete_account
         )
         
         # Настраиваем callback'и агента
@@ -150,6 +151,13 @@ class Application:
     def save_account_credentials(self, login: str, password: str, mafile_path: str, api_key: str) -> None:
         """Сохранить данные аккаунта и обновить список в UI."""
         self.agent.save_account_credentials(login, password, mafile_path, api_key)
+        
+        accounts = self.agent.get_accounts_with_proxies()
+        self.gui.update_accounts_list(accounts)
+    
+    def delete_account(self, login: str) -> None:
+        """Удалить аккаунт и обновить список в UI."""
+        self.agent.delete_account(login)
         
         accounts = self.agent.get_accounts_with_proxies()
         self.gui.update_accounts_list(accounts)

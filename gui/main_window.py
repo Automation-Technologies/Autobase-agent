@@ -20,7 +20,8 @@ class AgentGUI(TkinterDnD.Tk):
         on_save_config: Callable,
         on_save_proxy: Callable,
         on_remove_proxy: Callable,
-        on_save_account_credentials: Callable
+        on_save_account_credentials: Callable,
+        on_delete_account: Callable
     ):
         super().__init__()
         
@@ -33,6 +34,7 @@ class AgentGUI(TkinterDnD.Tk):
         self.on_save_proxy = on_save_proxy
         self.on_remove_proxy = on_remove_proxy
         self.on_save_account_credentials = on_save_account_credentials
+        self.on_delete_account = on_delete_account
         
         # Настройки окна
         self.title("AutoBase Agent")
@@ -80,7 +82,8 @@ class AgentGUI(TkinterDnD.Tk):
             mafiles_dir=self.mafiles_dir,
             on_save_proxy=self.on_save_proxy,
             on_remove_proxy=self.on_remove_proxy,
-            on_save_account_credentials=self.on_save_account_credentials
+            on_save_account_credentials=self.on_save_account_credentials,
+            on_delete_account=self.on_delete_account
         )
         
         self.frame_settings = SettingsFrame(
