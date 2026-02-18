@@ -151,17 +151,23 @@ class SteamClient:
         return msg in response.text
 
     @login_required
-    def get_my_inventory(self, game: GameOptions, merge: bool = True, count: int = 5000) -> dict:
+    def get_my_inventory(self, game: GameOptions, merge: bool = True, count: int = 5000,
+                         preserve_bbcode: bool = False, raw_asset_properties: bool = False) -> dict:
         steam_id = self.steam_guard['steamid']
-        return self.get_partner_inventory(str(steam_id), game, merge, count)
+        return self.get_partner_inventory(str(steam_id), game, merge, count, preserve_bbcode, raw_asset_properties)
 
     @login_required
     def get_partner_inventory(self, partner_steam_id: str, game: GameOptions, merge: bool = True,
-                              count: int = 5000) -> dict:
+                              count: int = 5000, preserve_bbcode: bool = False, raw_asset_properties: bool = False) -> dict:
         url = '/'.join([SteamUrl.COMMUNITY_URL, 'inventory', partner_steam_id, game.app_id, game.context_id])
         # Для некоторых аккаунтов параметр count вызывает HTTP 400
         # Сначала пробуем без count, затем с count если нужно
         params = {'l': 'english'}
+        
+        if preserve_bbcode:
+            params['preserve_bbcode'] = '1'
+        if raw_asset_properties:
+            params['raw_asset_properties'] = '1'
 
         # Добавляем заголовки для лучшей совместимости
         headers = {
