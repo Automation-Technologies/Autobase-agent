@@ -3,10 +3,19 @@ WebSocket клиент для связи с AutoBase сервером.
 """
 import json
 import logging
+from decimal import Decimal
 from typing import Callable, Optional, List
 
 import websockets
 from websockets.client import WebSocketClientProtocol
+
+
+class DecimalEncoder(json.JSONEncoder):
+    """JSON энкодер с поддержкой Decimal"""
+    def default(self, obj):
+        if isinstance(obj, Decimal):
+            return str(obj)
+        return super(DecimalEncoder, self).default(obj)
 
 
 class WebSocketClient:
@@ -111,8 +120,8 @@ class WebSocketClient:
                 if "request_id" not in response:
                     response["request_id"] = request_id
 
-                # Отправляем ответ серверу
-                await self.websocket.send(json.dumps(response))
+                # Отправляем ответ серверу (с поддержкой Decimal через DecimalEncoder)
+                await self.websocket.send(json.dumps(response, cls=DecimalEncoder))
                 self.logger.debug(f"Ответ отправлен для request_id={request_id}")
 
             except websockets.exceptions.ConnectionClosed:
