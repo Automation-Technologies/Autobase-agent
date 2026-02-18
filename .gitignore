@@ -11,7 +11,18 @@ logs/
 *.db
 .env
 venv/
+.venv/
 .vscode/
 *.json
 *.html
 *.json
+
+# PyInstaller
+build/
+dist/
+*.spec.bak
+*.spec~
+
+# Security
+security.salt
+.github
