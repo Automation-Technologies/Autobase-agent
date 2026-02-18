@@ -301,6 +301,34 @@ class SteamMarket:
             'buy_orders': buy_orders,
             'sell_listings': sell_listings
         }
+    
+    @login_required
+    def get_market_history(self, start: int = 0, count: int = 100) -> dict:
+        """
+        Получить историю покупок/продаж на Steam Market
+        
+        Args:
+            start: Начальная позиция (по умолчанию 0)
+            count: Количество записей для получения (по умолчанию 100)
+        
+        Returns:
+            Словарь с сырыми данными истории от Steam API
+        """
+        url = '/'.join([SteamUrl.COMMUNITY_URL, 'market', 'myhistory', 'render'])
+        params = {
+            'query': '',
+            'start': start,
+            'count': count
+        }
+        
+        response = self._session.get(url, params=params, timeout=60)
+        response.encoding = 'utf-8-sig'
+        response_dict = response.json()
+        
+        if not response_dict.get('success'):
+            raise ApiException('Success value should be true.')
+        
+        return response_dict
 
     @login_required
     def create_sell_order(self, assetid: str, game: GameOptions, money_to_receive: str) -> dict:

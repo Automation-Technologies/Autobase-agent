@@ -84,6 +84,8 @@ class CommandExecutor:
                 result = await self._market_get_my_recent_sell_listings(steam_client)
             elif cmd_type == "market_get_my_market_listings":
                 result = await self._market_get_my_market_listings(steam_client)
+            elif cmd_type == "market_get_history":
+                result = await self._market_get_history(steam_client, args)
             else:
                 result = {"status": "error", "message": f"Неизвестная команда: {cmd_type}"}
 
@@ -630,6 +632,32 @@ class CommandExecutor:
             }
         except Exception as e:
             self.logger.error(f"Ошибка получения всех листингов: {e}", exc_info=True)
+            return {
+                "status": "error",
+                "message": str(e)
+            }
+    
+    async def _market_get_history(self, client: SteamClient, args: Dict[str, Any]) -> Dict[str, Any]:
+        """Получить историю покупок/продаж на Steam Market."""
+        start = args.get("start", 0)
+        count = args.get("count", 100)
+        
+        loop = asyncio.get_event_loop()
+        
+        try:
+            result = await loop.run_in_executor(
+                None,
+                client.market.get_market_history,
+                start,
+                count
+            )
+            
+            return {
+                "status": "success",
+                "result": result
+            }
+        except Exception as e:
+            self.logger.error(f"Ошибка получения истории маркета: {e}", exc_info=True)
             return {
                 "status": "error",
                 "message": str(e)
