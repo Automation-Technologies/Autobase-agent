@@ -13,6 +13,31 @@ from core.proxy_manager import ProxyManager
 from steampy.client import SteamClient
 
 
+class _GameOptionsResolver:
+    """
+    Жёсткий резолвер GameOptions по app_id на стороне агента.
+    Использует только предопределённые игры из steampy.models.GameOptions
+    без любых дефолтов, алиасов и fallback-логики.
+    """
+
+    @staticmethod
+    def resolve(app_id: str):
+        from steampy.models import GameOptions as GO
+
+        mapping = {
+            GO.CS.app_id: GO.CS,
+            GO.DOTA2.app_id: GO.DOTA2,
+            GO.TF2.app_id: GO.TF2,
+            GO.STEAM.app_id: GO.STEAM,
+            GO.RUST.app_id: GO.RUST,
+        }
+
+        if app_id not in mapping:
+            raise ValueError(f"Неподдерживаемый app_id: {app_id}")
+
+        return mapping[app_id]
+
+
 class CommandExecutor:
     """Выполняет команды от сервера через Steam API."""
 
@@ -70,6 +95,8 @@ class CommandExecutor:
                 result = await self._make_offer_with_url(steam_client, args)
             elif cmd_type == "market_fetch_price":
                 result = await self._market_fetch_price(steam_client, args)
+            elif cmd_type == "market_create_buy_order":
+                result = await self._market_create_buy_order(steam_client, args)
             elif cmd_type == "market_create_sell_order":
                 result = await self._market_create_sell_order(steam_client, args)
             elif cmd_type == "market_cancel_sell_order":
@@ -246,25 +273,18 @@ class CommandExecutor:
         from steampy.models import GameOptions
 
         # Получаем параметры из args (формат из RemoteSteamClient)
-        app_id = args.get("app_id", "730")  # CS2 по умолчанию
-        context_id = args.get("context_id", "2")
+        app_id = args.get("app_id")
+        context_id = args.get("context_id")
         merge = args.get("merge", True)
         count = args.get("count", 5000)
         preserve_bbcode = args.get("preserve_bbcode", False)
         raw_asset_properties = args.get("raw_asset_properties", False)
 
-        # Определяем GameOptions
-        if app_id == "730":
-            game = GameOptions.CS
-        elif app_id == "570":
-            game = GameOptions.DOTA2
-        elif app_id == "440":
-            game = GameOptions.TF2
-        elif app_id == "753":
-            game = GameOptions.STEAM
-        else:
-            # Создаем кастомный GameOptions
-            game = GameOptions(app_id, context_id)
+        if not app_id or not context_id:
+            return {"status": "error", "message": "Не указаны app_id или context_id"}
+
+        # Используем строго GameOptions из steampy.models без дефолтов и алиасов
+        game = GameOptions(app_id, context_id)
 
         loop = asyncio.get_event_loop()
 
@@ -299,25 +319,19 @@ class CommandExecutor:
         from steampy.models import GameOptions
 
         partner_steam_id = args.get("partner_steam_id")
-        app_id = args.get("app_id", "730")
-        context_id = args.get("context_id", "2")
+        app_id = args.get("app_id")
+        context_id = args.get("context_id")
         merge = args.get("merge", True)
         count = args.get("count", 5000)
 
         if not partner_steam_id:
             return {"status": "error", "message": "Не указан partner_steam_id"}
 
-        # Определяем GameOptions
-        if app_id == "730":
-            game = GameOptions.CS
-        elif app_id == "570":
-            game = GameOptions.DOTA2
-        elif app_id == "440":
-            game = GameOptions.TF2
-        elif app_id == "753":
-            game = GameOptions.STEAM
-        else:
-            game = GameOptions(app_id, context_id)
+        if not app_id or not context_id:
+            return {"status": "error", "message": "Не указаны app_id или context_id"}
+
+        # Используем строго GameOptions из steampy.models без дефолтов и алиасов
+        game = GameOptions(app_id, context_id)
 
         loop = asyncio.get_event_loop()
 
@@ -449,7 +463,7 @@ class CommandExecutor:
 
     async def _market_fetch_price(self, client: SteamClient, args: Dict[str, Any]) -> Dict[str, Any]:
         """Получить цену предмета."""
-        from steampy.models import GameOptions, Currency
+        from steampy.models import Currency
 
         item_hash_name = args.get("item_hash_name")
         app_id = args.get("app_id")
@@ -458,17 +472,11 @@ class CommandExecutor:
         if not item_hash_name or not app_id or currency_value is None:
             return {"status": "error", "message": "Не указаны item_hash_name, app_id или currency"}
 
-        # Определяем GameOptions
-        if app_id == "730":
-            game = GameOptions.CS
-        elif app_id == "570":
-            game = GameOptions.DOTA2
-        elif app_id == "440":
-            game = GameOptions.TF2
-        elif app_id == "753":
-            game = GameOptions.STEAM
-        else:
-            game = GameOptions(app_id, "2")
+        # Жёстко резолвим GameOptions через единый резолвер без копипасты и дефолтов
+        try:
+            game = _GameOptionsResolver.resolve(app_id)
+        except ValueError as e:
+            return {"status": "error", "message": str(e)}
 
         # Определяем Currency
         try:
@@ -497,6 +505,57 @@ class CommandExecutor:
                 "message": str(e)
             }
 
+    async def _market_create_buy_order(self, client: SteamClient, args: Dict[str, Any]) -> Dict[str, Any]:
+        """Создать ордер на покупку через SteamMarket.create_buy_order."""
+        from steampy.models import Currency
+
+        market_name = args.get("market_name")
+        price_single_item = args.get("price_single_item")
+        quantity = args.get("quantity")
+        app_id = args.get("app_id")
+        currency_value = args.get("currency")
+
+        if not market_name or price_single_item is None or quantity is None or not app_id or currency_value is None:
+            return {
+                "status": "error",
+                "message": "Не указаны market_name, price_single_item, quantity, app_id или currency"
+            }
+
+        # Жёстко резолвим GameOptions через единый резолвер без копипасты и дефолтов
+        try:
+            game = _GameOptionsResolver.resolve(app_id)
+        except ValueError as e:
+            return {"status": "error", "message": str(e)}
+
+        # Определяем Currency
+        try:
+            currency = Currency(currency_value)
+        except (ValueError, TypeError):
+            return {"status": "error", "message": f"Неверное значение валюты: {currency_value}"}
+
+        loop = asyncio.get_event_loop()
+
+        try:
+            result = await loop.run_in_executor(
+                None,
+                client.market.create_buy_order,
+                market_name,
+                price_single_item,
+                int(quantity),
+                game,
+                currency
+            )
+            return {
+                "status": "success",
+                "result": result
+            }
+        except Exception as e:
+            self.logger.error(f"Ошибка создания ордера на покупку: {e}", exc_info=True)
+            return {
+                "status": "error",
+                "message": str(e)
+            }
+
     async def _market_create_sell_order(self, client: SteamClient, args: Dict[str, Any]) -> Dict[str, Any]:
         """Создать ордер на продажу."""
         from steampy.models import GameOptions
@@ -509,17 +568,11 @@ class CommandExecutor:
         if not assetid or not app_id or not money_to_receive:
             return {"status": "error", "message": "Не указаны assetid, app_id или money_to_receive"}
 
-        # Определяем GameOptions
-        if app_id == "730":
-            game = GameOptions.CS
-        elif app_id == "570":
-            game = GameOptions.DOTA2
-        elif app_id == "440":
-            game = GameOptions.TF2
-        elif app_id == "753":
-            game = GameOptions.STEAM
-        else:
-            game = GameOptions(app_id, context_id or "2")
+        # Жёстко резолвим GameOptions через единый резолвер без копипасты и дефолтов
+        try:
+            game = _GameOptionsResolver.resolve(app_id)
+        except ValueError as e:
+            return {"status": "error", "message": str(e)}
 
         loop = asyncio.get_event_loop()
 
