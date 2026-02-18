@@ -353,7 +353,7 @@ class Agent:
     async def _handle_command(self, command: Dict[str, Any]) -> Dict[str, Any]:
         """Обработать команду от сервера."""
         cmd_type = command.get("cmd")
-        login = command.get("login")
+        login = command.get("account_login")
 
         self._log(f"📥 Команда: {cmd_type} для {login}")
 

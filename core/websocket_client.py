@@ -100,7 +100,7 @@ class WebSocketClient:
                 # Извлекаем request_id из команды для ответа
                 request_id = command.get("request_id")
                 cmd_type = command.get("cmd")
-                login = command.get("account_login") or command.get("login")
+                login = command.get("account_login")
 
                 self.logger.info(f"Получена команда: {cmd_type} для {login} (request_id={request_id})")
 

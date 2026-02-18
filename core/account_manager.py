@@ -34,7 +34,11 @@ class AccountManager:
     def set_account(self, login: str, password: str, mafile_path: str, api_key: str) -> None:
         """Создать или обновить запись аккаунта."""
         storage = self._read_storage()
-        storage[login] = {
+        login_lower = login.lower()
+        for key in list(storage.keys()):
+            if key.lower() == login_lower:
+                del storage[key]
+        storage[login_lower] = {
             "password": password,
             "mafile_path": mafile_path,
             "api_key": api_key,
@@ -44,32 +48,38 @@ class AccountManager:
     def get_password(self, login: str) -> Optional[str]:
         """Получить пароль аккаунта по логину."""
         storage = self._read_storage()
-        account = storage.get(login)
-        if account is None:
-            return None
-        return account.get("password")
+        login_lower = login.lower()
+        for key, account in storage.items():
+            if key.lower() == login_lower:
+                return account.get("password")
+        return None
 
     def get_mafile_path(self, login: str) -> Optional[str]:
         """Получить путь к maFile по логину."""
         storage = self._read_storage()
-        account = storage.get(login)
-        if account is None:
-            return None
-        return account.get("mafile_path")
+        login_lower = login.lower()
+        for key, account in storage.items():
+            if key.lower() == login_lower:
+                return account.get("mafile_path")
+        return None
 
     def get_api_key(self, login: str) -> Optional[str]:
         """Получить API key по логину."""
         storage = self._read_storage()
-        account = storage.get(login)
-        if account is None:
-            return None
-        return account.get("api_key")
+        login_lower = login.lower()
+        for key, account in storage.items():
+            if key.lower() == login_lower:
+                return account.get("api_key")
+        return None
 
     def remove_account(self, login: str) -> None:
         """Удалить запись аккаунта."""
         storage = self._read_storage()
-        if login in storage:
-            del storage[login]
-            self._write_storage(storage)
+        login_lower = login.lower()
+        for key in list(storage.keys()):
+            if key.lower() == login_lower:
+                del storage[key]
+                self._write_storage(storage)
+                break
 
 

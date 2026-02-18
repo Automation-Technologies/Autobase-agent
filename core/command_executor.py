@@ -34,7 +34,7 @@ class CommandExecutor:
         command: {"cmd": "get_inventory", "account_login": "vasya", "args": {...}, "request_id": "..."}
         """
         cmd_type = command.get("cmd")
-        login = command.get("account_login") or command.get("login")
+        login = command.get("account_login")
         request_id = command.get("request_id")
 
         if not cmd_type or not login:
