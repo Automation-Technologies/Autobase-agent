@@ -6,6 +6,7 @@ __pycache__/
 config/config.json
 config/proxies.json
 maFiles/*.maFile
+maFiles/accounts.json
 logs/
 *.db
 .env

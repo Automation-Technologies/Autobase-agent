@@ -185,12 +185,12 @@ class Agent:
 
                 password = self.account_manager.get_password(login)
                 if password is None:
-                    self._log(f"❌ В accounts.json нет пароля для {login}, пропускаем аккаунт")
+                    self._log(f"❌ В maFiles/accounts.json нет пароля для {login}, пропускаем аккаунт")
                     continue
 
                 api_key = self.account_manager.get_api_key(login)
                 if api_key is None:
-                    self._log(f"❌ В accounts.json нет API key для {login}, пропускаем аккаунт")
+                    self._log(f"❌ В maFiles/accounts.json нет API key для {login}, пропускаем аккаунт")
                     continue
 
                 mafile_path = acc["filepath"]
@@ -327,7 +327,7 @@ class Agent:
         self._log(f"✅ Данные аккаунта сохранены для {login}")
 
     def delete_account(self, login: str) -> None:
-        """Полностью удалить аккаунт: maFile, прокси и запись в accounts.json."""
+        """Полностью удалить аккаунт: maFile, прокси и запись в maFiles/accounts.json."""
         mafile_path: str = self.account_manager.get_mafile_path(login)
         if mafile_path is None:
             path_obj_from_scanner: Path = self.mafile_scanner.get_mafile_path_by_login(login)

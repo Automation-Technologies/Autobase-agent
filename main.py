@@ -36,8 +36,8 @@ class Application:
         self.base_dir = Path(__file__).parent
         self.config_path = self.base_dir / "config" / "config.json"
         self.proxies_path = self.base_dir / "config" / "proxies.json"
-        self.accounts_path = self.base_dir / "config" / "accounts.json"
         self.mafiles_dir = self.base_dir / "maFiles"
+        self.accounts_path = self.base_dir / "maFiles" / "accounts.json"
         
         # Агент
         self.agent = Agent(

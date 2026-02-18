@@ -157,15 +157,15 @@ class CommandExecutor:
         login_cookies = self.account_manager.get_login_cookies(login)
 
         if not password:
-            self.logger.error(f"Для {login} не найден пароль в accounts.json")
+            self.logger.error(f"Для {login} не найден пароль в maFiles/accounts.json")
             return None
 
         if not mafile_path:
-            self.logger.error(f"Для {login} не найден путь к maFile в accounts.json")
+            self.logger.error(f"Для {login} не найден путь к maFile в maFiles/accounts.json")
             return None
 
         if not api_key:
-            self.logger.error(f"Для {login} не найден API key в accounts.json")
+            self.logger.error(f"Для {login} не найден API key в maFiles/accounts.json")
             return None
 
         # Проверяем, что maFile существует

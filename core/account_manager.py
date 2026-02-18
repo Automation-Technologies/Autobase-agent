@@ -38,9 +38,13 @@ class AccountManager:
         for key in list(storage.keys()):
             if key.lower() == login_lower:
                 del storage[key]
+        
+        # Нормализуем путь к абсолютному
+        mafile_path_absolute = str(Path(mafile_path).resolve())
+        
         storage[login_lower] = {
             "password": password,
-            "mafile_path": mafile_path,
+            "mafile_path": mafile_path_absolute,
             "api_key": api_key,
         }
         self._write_storage(storage)
