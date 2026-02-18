@@ -31,13 +31,16 @@ from gui.main_window import AgentGUI
 class Application:
     """Главное приложение."""
     
-    def __init__(self):
+    def __init__(self, on_close_callback=None):
         # Пути
         self.base_dir = Path(__file__).parent
         self.config_path = self.base_dir / "config" / "config.json"
         self.proxies_path = self.base_dir / "config" / "proxies.json"
         self.mafiles_dir = self.base_dir / "maFiles"
         self.accounts_path = self.base_dir / "maFiles" / "accounts.json"
+        
+        # Callback для закрытия (используется launcher для шифрования)
+        self.on_close_callback = on_close_callback
         
         # Агент
         self.agent = Agent(
@@ -59,6 +62,9 @@ class Application:
             on_save_account_credentials=self.save_account_credentials,
             on_delete_account=self.delete_account
         )
+        
+        # Настраиваем обработчик закрытия окна
+        self.gui.protocol("WM_DELETE_WINDOW", self.on_closing)
         
         # Настраиваем callback'и агента
         self.agent.set_callbacks(
@@ -172,16 +178,34 @@ class Application:
         # Обновляем GUI (thread-safe через after)
         self.gui.after(0, lambda: self.gui.add_log(message))
     
+    def on_closing(self) -> None:
+        """Обработчик закрытия окна."""
+        # Останавливаем агента если запущен
+        if self.agent_thread and self.agent_thread.is_alive():
+            self.stop_agent()
+        
+        # Вызываем callback для шифрования (если передан из launcher)
+        if self.on_close_callback:
+            self.on_close_callback()
+        
+        # Закрываем окно
+        self.gui.destroy()
+    
     def run(self) -> None:
         """Запустить приложение."""
         self.gui.mainloop()
 
 
-if __name__ == "__main__":
+def run_bot():
+    """Запускает основное приложение. Используется launcher.py."""
     app = Application()
     try:
         app.run()
     except KeyboardInterrupt:
         logging.info("Приложение остановлено пользователем")
         sys.exit(0)
+
+
+if __name__ == "__main__":
+    run_bot()
 
