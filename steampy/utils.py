@@ -191,7 +191,7 @@ def merge_items(items: List[dict], descriptions: dict, **kwargs) -> dict:
     return merged_items
 
 
-def get_market_listings_from_html(html: str) -> dict:
+def get_market_listings_from_html(html) -> dict:
     document = BeautifulSoup(html, "html.parser")
     nodes = document.select("div[id=myListings]")[0].findAll("div", {"class": "market_home_listing_table"})
     sell_listings_dict = {}
@@ -301,11 +301,17 @@ def get_buy_orders_from_node(node: Tag) -> dict:
     return buy_orders_dict
 
 
-def get_listing_id_to_assets_address_from_html(html: str) -> dict:
+def get_listing_id_to_assets_address_from_html(html) -> dict:
     listing_id_to_assets_address = {}
-    regex = r"CreateItemHoverFromContainer\( [\w]+, 'mylisting_([\d]+)_[\w]+', ([\d]+), '([\d]+)', '([\d]+)', [\d]+ \);"
-    for match in re.findall(regex, html):
-        listing_id_to_assets_address[match[0]] = [str(match[1]), match[2], match[3]]
+    if isinstance(html, bytes):
+        regex = (rb"CreateItemHoverFromContainer\( [\w]+, 'mylisting_([\d]+)_[\w]+', ([\d]+), '([\d]+)', '([\d]+)', "
+                 rb"[\d]+ \);")
+        for match in re.findall(regex, html):
+            listing_id_to_assets_address[match[0].decode('utf-8')] = [str(match[1].decode('utf-8')), match[2].decode('utf-8'), match[3].decode('utf-8')]
+    else:
+        regex = r"CreateItemHoverFromContainer\( [\w]+, 'mylisting_([\d]+)_[\w]+', ([\d]+), '([\d]+)', '([\d]+)', [\d]+ \);"
+        for match in re.findall(regex, html):
+            listing_id_to_assets_address[match[0]] = [str(match[1]), match[2], match[3]]
     return listing_id_to_assets_address
 
 
