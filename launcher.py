@@ -17,7 +17,15 @@ import signal
 # --- НАСТРОЙКИ ---
 TARGET_FOLDER = 'maFiles'
 SALT_FILE = 'security.salt'
-BASE_DIR = Path(__file__).parent
+
+# Определяем базовую директорию: для .exe - папка с exe, для .py - папка со скриптом
+if getattr(sys, 'frozen', False):
+    # Запущено как .exe
+    BASE_DIR = Path(sys.executable).parent
+else:
+    # Запущено как .py скрипт
+    BASE_DIR = Path(__file__).parent
+
 TARGET_PATH = BASE_DIR / TARGET_FOLDER
 SALT_PATH = BASE_DIR / SALT_FILE
 

@@ -9,7 +9,13 @@ from pathlib import Path
 import sys
 
 # Создаем необходимые папки ДО настройки логирования
-base_dir = Path(__file__).parent
+# Определяем базовую директорию: для .exe - папка с exe, для .py - папка со скриптом
+if getattr(sys, 'frozen', False):
+    # Запущено как .exe
+    base_dir = Path(sys.executable).parent
+else:
+    # Запущено как .py скрипт
+    base_dir = Path(__file__).parent
 (base_dir / "config").mkdir(exist_ok=True)
 (base_dir / "maFiles").mkdir(exist_ok=True)
 (base_dir / "logs").mkdir(exist_ok=True)
@@ -33,7 +39,13 @@ class Application:
     
     def __init__(self, on_close_callback=None):
         # Пути
-        self.base_dir = Path(__file__).parent
+        # Определяем базовую директорию: для .exe - папка с exe, для .py - папка со скриптом
+        if getattr(sys, 'frozen', False):
+            # Запущено как .exe
+            self.base_dir = Path(sys.executable).parent
+        else:
+            # Запущено как .py скрипт
+            self.base_dir = Path(__file__).parent
         self.config_path = self.base_dir / "config" / "config.json"
         self.proxies_path = self.base_dir / "config" / "proxies.json"
         self.mafiles_dir = self.base_dir / "maFiles"
