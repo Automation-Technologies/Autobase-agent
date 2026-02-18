@@ -127,6 +127,7 @@ class CommandExecutor:
         password = self.account_manager.get_password(login)
         mafile_path = self.account_manager.get_mafile_path(login)
         api_key = self.account_manager.get_api_key(login)
+        login_cookies = self.account_manager.get_login_cookies(login)
 
         if not password:
             self.logger.error(f"Для {login} не найден пароль в accounts.json")
@@ -181,11 +182,33 @@ class CommandExecutor:
         else:
             self.logger.info(f"Для {login} используется прямое подключение (без прокси)")
 
-        # Создаем клиента
+        loop = asyncio.get_event_loop()
+
+        # Если есть сохранённые куки, сначала пробуем поднять сессию на них без повторного логина
+        if login_cookies is not None:
+            try:
+                self.logger.info(f"Пробую восстановить сессию по сохранённым кукам для {login}")
+                client_from_cookies = SteamClient(
+                    api_key,
+                    username=login,
+                    password=password,
+                    steam_guard=steam_guard_data,
+                    login_cookies=login_cookies,
+                    proxies=client_proxies,
+                )
+                is_alive = await loop.run_in_executor(None, client_from_cookies.is_session_alive)
+                if is_alive:
+                    self.steam_clients[login] = client_from_cookies
+                    self.logger.info(f"✅ Использую сохранённую сессию Steam для {login} (без повторного логина)")
+                    return client_from_cookies
+                self.logger.warning(f"Сохранённая сессия для {login} неактивна, выполняю полный логин")
+            except Exception as e:
+                self.logger.warning(f"Не удалось восстановить сессию по кукам для {login}: {e}, выполняю полный логин")
+
+        # Создаем клиента для полноценного логина
         client = SteamClient(api_key, proxies=client_proxies)
 
         # Логинимся (синхронно, но в executor)
-        loop = asyncio.get_event_loop()
         try:
             await loop.run_in_executor(
                 None,
@@ -200,6 +223,14 @@ class CommandExecutor:
             if not is_alive:
                 self.logger.error(f"Логин для {login} выполнен, но сессия неактивна")
                 return None
+
+            # Сохраняем куки после успешного логина
+            try:
+                cookies_dict = client._session.cookies.get_dict()
+                self.account_manager.set_login_cookies(login, cookies_dict)
+                self.logger.info(f"Сохранены login_cookies для {login} ({len(cookies_dict)} куков)")
+            except Exception as e:
+                self.logger.warning(f"Не удалось сохранить login_cookies для {login}: {e}")
 
             self.steam_clients[login] = client
             self.logger.info(f"✅ Steam клиент создан и залогинен для {login}")

@@ -72,6 +72,30 @@ class AccountManager:
                 return account.get("api_key")
         return None
 
+    def get_login_cookies(self, login: str) -> Optional[Dict[str, str]]:
+        """Получить сохранённые login_cookies по логину."""
+        storage = self._read_storage()
+        login_lower = login.lower()
+        for key, account in storage.items():
+            if key.lower() == login_lower:
+                cookies = account.get("login_cookies")
+                if isinstance(cookies, dict):
+                    return cookies
+                return None
+        return None
+
+    def set_login_cookies(self, login: str, cookies: Dict[str, str]) -> None:
+        """Сохранить login_cookies для логина (перезаписывает только этот ключ)."""
+        storage = self._read_storage()
+        login_lower = login.lower()
+        for key in list(storage.keys()):
+            if key.lower() == login_lower:
+                account = storage[key]
+                account["login_cookies"] = cookies
+                storage[key] = account
+                self._write_storage(storage)
+                return
+
     def remove_account(self, login: str) -> None:
         """Удалить запись аккаунта."""
         storage = self._read_storage()
