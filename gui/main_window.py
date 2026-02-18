@@ -38,7 +38,8 @@ class AgentGUI(TkinterDnD.Tk):
         
         # Настройки окна
         self.title("AutoBase Agent")
-        self.geometry("900x650")
+        self.geometry("900x800")
+        self.minsize(900, 800)
         self.resizable(True, True)
         
         # Устанавливаем иконку

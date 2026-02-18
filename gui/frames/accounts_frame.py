@@ -136,8 +136,8 @@ class AccountsFrame(ctk.CTkFrame):
         )
         accounts_label.pack(pady=(0, 5), padx=20, fill="x")
         
-        self.scroll_frame = ctk.CTkScrollableFrame(self, height=250)
-        self.scroll_frame.pack(fill="both", expand=True, padx=20, pady=(0, 20))
+        self.scroll_frame = ctk.CTkScrollableFrame(self, height=150)
+        self.scroll_frame.pack(fill="x", padx=20, pady=(0, 20))
         
         # Панель редактирования прокси
         self.edit_frame = ctk.CTkFrame(self, corner_radius=10)
