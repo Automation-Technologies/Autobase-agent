@@ -212,16 +212,24 @@ class SteamClient:
             if not response_dict:
                 raise ApiException('Invalid response format from Steam API: empty response')
 
-            # Для некоторых случаев Steam может не включать поле success
-            if 'success' in response_dict and response_dict['success'] != 1:
+            # Проверяем поле success - оно должно быть равно 1
+            if 'success' not in response_dict:
+                raise ApiException('Invalid response format from Steam API: missing success field')
+            
+            if response_dict['success'] != 1:
                 error_msg = response_dict.get('Error', response_dict.get('error', 'Unknown error'))
                 raise ApiException(f'Steam API error: {error_msg}')
 
             # Проверяем наличие assets (предметов в инвентаре)
             if 'assets' not in response_dict or not response_dict['assets']:
-                # Возвращаем пустой словарь, если нет предметов
+                # Возвращаем полный ответ от Steam API, даже если инвентарь пустой
+                # Это важно для совместимости с сервером, который проверяет success=1
                 print("No assets found in inventory response")
-                return {}
+                if merge:
+                    # Если merge=True, возвращаем пустой словарь с описаниями
+                    return merge_items_with_descriptions_from_inventory(response_dict, game)
+                # Если merge=False, возвращаем полный ответ от Steam API
+                return response_dict
 
             print(f"Found {len(response_dict['assets'])} items in inventory")
 
