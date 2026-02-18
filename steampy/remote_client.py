@@ -220,6 +220,20 @@ class RemoteSteamClient:
             True если агент онлайн и сессия активна
         """
         return self._send_command_and_wait("is_session_alive")
+
+    # ===== Совместимость с SteamClient =====
+
+    def _get_session_id(self) -> str:
+        """
+        Получить текущий sessionid из сессии Steam на агенте.
+
+        Используется ординатором и другими компонентами, которые ожидают,
+        что у клиента есть приватный метод `_get_session_id`, как у обычного SteamClient.
+        """
+        result = self._send_command_and_wait("get_session_id")
+        if not isinstance(result, str):
+            raise RemoteSteamClientException(f"Invalid session_id from agent: {result!r}")
+        return result
     
     def get_trade_offers(self, merge: bool = True) -> dict:
         """

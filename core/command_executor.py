@@ -86,6 +86,8 @@ class CommandExecutor:
                 result = await self._market_get_my_market_listings(steam_client)
             elif cmd_type == "market_get_history":
                 result = await self._market_get_history(steam_client, args)
+            elif cmd_type == "get_session_id":
+                result = await self._get_session_id(steam_client)
             else:
                 result = {"status": "error", "message": f"Неизвестная команда: {cmd_type}"}
 
@@ -662,6 +664,26 @@ class CommandExecutor:
             }
         except Exception as e:
             self.logger.error(f"Ошибка получения истории маркета: {e}", exc_info=True)
+            return {
+                "status": "error",
+                "message": str(e)
+            }
+
+    async def _get_session_id(self, client: SteamClient) -> Dict[str, Any]:
+        """Вернуть sessionid, как это делает SteamClient._get_session_id()."""
+        loop = asyncio.get_event_loop()
+
+        try:
+            session_id = await loop.run_in_executor(
+                None,
+                client._get_session_id  # type: ignore[attr-defined]
+            )
+            return {
+                "status": "success",
+                "result": session_id
+            }
+        except Exception as e:
+            self.logger.error(f"Ошибка получения session_id: {e}", exc_info=True)
             return {
                 "status": "error",
                 "message": str(e)
