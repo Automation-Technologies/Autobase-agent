@@ -64,14 +64,26 @@ class CommandExecutor:
                 result = await self._get_partner_inventory(steam_client, args)
             elif cmd_type == "get_wallet_balance":
                 result = await self._get_wallet_balance(steam_client, args)
-            elif cmd_type == "send_trade_offer" or cmd_type == "make_offer":
-                result = await self._send_trade_offer(steam_client, args)
             elif cmd_type == "is_session_alive":
                 result = await self._is_session_alive(steam_client)
-            elif cmd_type == "get_trade_offers":
-                result = await self._get_trade_offers(steam_client, args)
-            elif cmd_type == "get_trade_offer":
-                result = await self._get_trade_offer(steam_client, args)
+            elif cmd_type == "make_offer_with_url":
+                result = await self._make_offer_with_url(steam_client, args)
+            elif cmd_type == "market_fetch_price":
+                result = await self._market_fetch_price(steam_client, args)
+            elif cmd_type == "market_create_sell_order":
+                result = await self._market_create_sell_order(steam_client, args)
+            elif cmd_type == "market_cancel_sell_order":
+                result = await self._market_cancel_sell_order(steam_client, args)
+            elif cmd_type == "market_cancel_buy_order":
+                result = await self._market_cancel_buy_order(steam_client, args)
+            elif cmd_type == "market_get_my_buy_orders":
+                result = await self._market_get_my_buy_orders(steam_client)
+            elif cmd_type == "market_get_my_sell_listings":
+                result = await self._market_get_my_sell_listings(steam_client)
+            elif cmd_type == "market_get_my_recent_sell_listings":
+                result = await self._market_get_my_recent_sell_listings(steam_client)
+            elif cmd_type == "market_get_my_market_listings":
+                result = await self._market_get_my_market_listings(steam_client)
             else:
                 result = {"status": "error", "message": f"Неизвестная команда: {cmd_type}"}
 
@@ -226,7 +238,8 @@ class CommandExecutor:
                     None,
                     client.get_my_inventory,
                     game,
-                    merge
+                    merge,
+                    count
                 )
                 return {
                     "status": "success",
@@ -310,55 +323,6 @@ class CommandExecutor:
                 "message": str(e)
             }
 
-    async def _get_trade_offers(self, client: SteamClient, args: Dict[str, Any]) -> Dict[str, Any]:
-        """Получить список трейд офферов."""
-        merge = args.get("merge", True)
-        loop = asyncio.get_event_loop()
-
-        try:
-            offers = await loop.run_in_executor(
-                None,
-                client.get_trade_offers,
-                merge
-            )
-            return {
-                "status": "success",
-                "result": offers
-            }
-        except Exception as e:
-            self.logger.error(f"Ошибка получения трейд офферов: {e}", exc_info=True)
-            return {
-                "status": "error",
-                "message": str(e)
-            }
-
-    async def _get_trade_offer(self, client: SteamClient, args: Dict[str, Any]) -> Dict[str, Any]:
-        """Получить информацию о конкретном трейд оффере."""
-        trade_offer_id = args.get("trade_offer_id")
-        merge = args.get("merge", True)
-
-        if not trade_offer_id:
-            return {"status": "error", "message": "Не указан trade_offer_id"}
-
-        loop = asyncio.get_event_loop()
-
-        try:
-            offer = await loop.run_in_executor(
-                None,
-                client.get_trade_offer,
-                trade_offer_id,
-                merge
-            )
-            return {
-                "status": "success",
-                "result": offer
-            }
-        except Exception as e:
-            self.logger.error(f"Ошибка получения трейд оффера: {e}", exc_info=True)
-            return {
-                "status": "error",
-                "message": str(e)
-            }
 
     async def _get_wallet_balance(self, client: SteamClient, args: Dict[str, Any]) -> Dict[str, Any]:
         """Получить баланс кошелька."""
@@ -390,63 +354,286 @@ class CommandExecutor:
 
         return {"status": "error", "message": "Не удалось получить баланс после 5 попыток"}
 
-    async def _send_trade_offer(self, client: SteamClient, args: Dict[str, Any]) -> Dict[str, Any]:
-        """Отправить трейд-оффер."""
+    async def _make_offer_with_url(self, client: SteamClient, args: Dict[str, Any]) -> Dict[str, Any]:
+        """Создать трейд-оффер по URL."""
         from steampy.models import Asset, GameOptions
 
-        partner_id = args.get("partner_id")
         trade_offer_url = args.get("trade_offer_url")
-        items_to_give = args.get("items_to_give", [])
-        items_to_receive = args.get("items_to_receive", [])
+        items_from_me = args.get("items_from_me", [])
+        items_from_them = args.get("items_from_them", [])
         message = args.get("message", "")
 
-        # Преобразуем items в Asset объекты
-        assets_to_give = []
-        for item in items_to_give:
-            game = GameOptions(item.get("app_id", "730"), item.get("context_id", "2"))
-            asset = Asset(item["asset_id"], game, item.get("amount", 1))
-            assets_to_give.append(asset)
+        if not trade_offer_url:
+            return {"status": "error", "message": "Не указан trade_offer_url"}
 
-        assets_to_receive = []
-        for item in items_to_receive:
-            game = GameOptions(item.get("app_id", "730"), item.get("context_id", "2"))
-            asset = Asset(item["asset_id"], game, item.get("amount", 1))
-            assets_to_receive.append(asset)
+        # Преобразуем словари в Asset объекты
+        assets_from_me = []
+        for item in items_from_me:
+            if isinstance(item, dict):
+                app_id = item.get("appid") or item.get("app_id", "730")
+                context_id = item.get("contextid") or item.get("context_id", "2")
+                game = GameOptions(app_id, context_id)
+                asset_id = item.get("assetid") or item.get("asset_id")
+                amount = item.get("amount", 1)
+                asset = Asset(asset_id, game, amount)
+                assets_from_me.append(asset)
+
+        assets_from_them = []
+        for item in items_from_them:
+            if isinstance(item, dict):
+                app_id = item.get("appid") or item.get("app_id", "730")
+                context_id = item.get("contextid") or item.get("context_id", "2")
+                game = GameOptions(app_id, context_id)
+                asset_id = item.get("assetid") or item.get("asset_id")
+                amount = item.get("amount", 1)
+                asset = Asset(asset_id, game, amount)
+                assets_from_them.append(asset)
 
         loop = asyncio.get_event_loop()
 
         try:
-            if trade_offer_url:
-                response = await loop.run_in_executor(
-                    None,
-                    client.make_offer_with_url,
-                    assets_to_give,
-                    assets_to_receive,
-                    trade_offer_url,
-                    message
-                )
-            elif partner_id:
-                response = await loop.run_in_executor(
-                    None,
-                    client.make_offer,
-                    assets_to_give,
-                    assets_to_receive,
-                    partner_id,
-                    message
-                )
-            else:
-                return {"status": "error", "message": "Не указан partner_id или trade_offer_url"}
-
+            response = await loop.run_in_executor(
+                None,
+                client.make_offer_with_url,
+                assets_from_me,
+                assets_from_them,
+                trade_offer_url,
+                message
+            )
             return {
                 "status": "success",
-                "result": {
-                    "trade_offer_id": response.get("tradeofferid"),
-                    "needs_mobile_confirmation": response.get("needs_mobile_confirmation", False)
-                }
+                "result": response
             }
         except Exception as e:
-            self.logger.error(f"Ошибка отправки трейд-оффера: {e}", exc_info=True)
+            self.logger.error(f"Ошибка создания трейд-оффера: {e}", exc_info=True)
             return {"status": "error", "message": str(e)}
+
+    async def _market_fetch_price(self, client: SteamClient, args: Dict[str, Any]) -> Dict[str, Any]:
+        """Получить цену предмета."""
+        from steampy.models import GameOptions, Currency
+
+        item_hash_name = args.get("item_hash_name")
+        app_id = args.get("app_id")
+        currency_value = args.get("currency")
+
+        if not item_hash_name or not app_id or currency_value is None:
+            return {"status": "error", "message": "Не указаны item_hash_name, app_id или currency"}
+
+        # Определяем GameOptions
+        if app_id == "730":
+            game = GameOptions.CS
+        elif app_id == "570":
+            game = GameOptions.DOTA2
+        elif app_id == "440":
+            game = GameOptions.TF2
+        elif app_id == "753":
+            game = GameOptions.STEAM
+        else:
+            game = GameOptions(app_id, "2")
+
+        # Определяем Currency
+        try:
+            currency = Currency(currency_value)
+        except (ValueError, TypeError):
+            return {"status": "error", "message": f"Неверное значение валюты: {currency_value}"}
+
+        loop = asyncio.get_event_loop()
+
+        try:
+            price_data = await loop.run_in_executor(
+                None,
+                client.market.fetch_price,
+                item_hash_name,
+                game,
+                currency
+            )
+            return {
+                "status": "success",
+                "result": price_data
+            }
+        except Exception as e:
+            self.logger.error(f"Ошибка получения цены: {e}", exc_info=True)
+            return {
+                "status": "error",
+                "message": str(e)
+            }
+
+    async def _market_create_sell_order(self, client: SteamClient, args: Dict[str, Any]) -> Dict[str, Any]:
+        """Создать ордер на продажу."""
+        from steampy.models import GameOptions
+
+        assetid = args.get("assetid")
+        app_id = args.get("app_id")
+        context_id = args.get("context_id")
+        money_to_receive = args.get("money_to_receive")
+
+        if not assetid or not app_id or not money_to_receive:
+            return {"status": "error", "message": "Не указаны assetid, app_id или money_to_receive"}
+
+        # Определяем GameOptions
+        if app_id == "730":
+            game = GameOptions.CS
+        elif app_id == "570":
+            game = GameOptions.DOTA2
+        elif app_id == "440":
+            game = GameOptions.TF2
+        elif app_id == "753":
+            game = GameOptions.STEAM
+        else:
+            game = GameOptions(app_id, context_id or "2")
+
+        loop = asyncio.get_event_loop()
+
+        try:
+            result = await loop.run_in_executor(
+                None,
+                client.market.create_sell_order,
+                assetid,
+                game,
+                money_to_receive
+            )
+            return {
+                "status": "success",
+                "result": result
+            }
+        except Exception as e:
+            self.logger.error(f"Ошибка создания ордера на продажу: {e}", exc_info=True)
+            return {
+                "status": "error",
+                "message": str(e)
+            }
+
+    async def _market_cancel_sell_order(self, client: SteamClient, args: Dict[str, Any]) -> Dict[str, Any]:
+        """Отменить ордер на продажу."""
+        sell_listing_id = args.get("sell_listing_id")
+
+        if not sell_listing_id:
+            return {"status": "error", "message": "Не указан sell_listing_id"}
+
+        loop = asyncio.get_event_loop()
+
+        try:
+            await loop.run_in_executor(
+                None,
+                client.market.cancel_sell_order,
+                sell_listing_id
+            )
+            return {
+                "status": "success",
+                "result": None
+            }
+        except Exception as e:
+            self.logger.error(f"Ошибка отмены ордера на продажу: {e}", exc_info=True)
+            return {
+                "status": "error",
+                "message": str(e)
+            }
+
+    async def _market_cancel_buy_order(self, client: SteamClient, args: Dict[str, Any]) -> Dict[str, Any]:
+        """Отменить ордер на покупку."""
+        buy_order_id = args.get("buy_order_id")
+
+        if not buy_order_id:
+            return {"status": "error", "message": "Не указан buy_order_id"}
+
+        loop = asyncio.get_event_loop()
+
+        try:
+            result = await loop.run_in_executor(
+                None,
+                client.market.cancel_buy_order,
+                buy_order_id
+            )
+            return {
+                "status": "success",
+                "result": result
+            }
+        except Exception as e:
+            self.logger.error(f"Ошибка отмены ордера на покупку: {e}", exc_info=True)
+            return {
+                "status": "error",
+                "message": str(e)
+            }
+
+    async def _market_get_my_buy_orders(self, client: SteamClient) -> Dict[str, Any]:
+        """Получить мои ордера на покупку."""
+        loop = asyncio.get_event_loop()
+
+        try:
+            buy_orders = await loop.run_in_executor(
+                None,
+                client.market.get_my_buy_orders
+            )
+            return {
+                "status": "success",
+                "result": buy_orders
+            }
+        except Exception as e:
+            self.logger.error(f"Ошибка получения ордеров на покупку: {e}", exc_info=True)
+            return {
+                "status": "error",
+                "message": str(e)
+            }
+
+    async def _market_get_my_sell_listings(self, client: SteamClient) -> Dict[str, Any]:
+        """Получить мои листинги на продажу."""
+        loop = asyncio.get_event_loop()
+
+        try:
+            sell_listings = await loop.run_in_executor(
+                None,
+                client.market.get_my_sell_listings
+            )
+            return {
+                "status": "success",
+                "result": sell_listings
+            }
+        except Exception as e:
+            self.logger.error(f"Ошибка получения листингов на продажу: {e}", exc_info=True)
+            return {
+                "status": "error",
+                "message": str(e)
+            }
+
+    async def _market_get_my_recent_sell_listings(self, client: SteamClient) -> Dict[str, Any]:
+        """Получить последние 10 листингов на продажу."""
+        loop = asyncio.get_event_loop()
+
+        try:
+            sell_listings = await loop.run_in_executor(
+                None,
+                client.market.get_my_recent_sell_listings
+            )
+            return {
+                "status": "success",
+                "result": sell_listings
+            }
+        except Exception as e:
+            self.logger.error(f"Ошибка получения последних листингов: {e}", exc_info=True)
+            return {
+                "status": "error",
+                "message": str(e)
+            }
+
+    async def _market_get_my_market_listings(self, client: SteamClient) -> Dict[str, Any]:
+        """Получить все мои листинги на маркете (buy + sell)."""
+        loop = asyncio.get_event_loop()
+
+        try:
+            listings = await loop.run_in_executor(
+                None,
+                client.market.get_my_market_listings
+            )
+            return {
+                "status": "success",
+                "result": listings
+            }
+        except Exception as e:
+            self.logger.error(f"Ошибка получения всех листингов: {e}", exc_info=True)
+            return {
+                "status": "error",
+                "message": str(e)
+            }
 
     def cleanup(self) -> None:
         """Закрыть все соединения."""
