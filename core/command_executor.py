@@ -217,6 +217,8 @@ class CommandExecutor:
         context_id = args.get("context_id", "2")
         merge = args.get("merge", True)
         count = args.get("count", 5000)
+        preserve_bbcode = args.get("preserve_bbcode", False)
+        raw_asset_properties = args.get("raw_asset_properties", False)
 
         # Определяем GameOptions
         if app_id == "730":
@@ -241,7 +243,9 @@ class CommandExecutor:
                     client.get_my_inventory,
                     game,
                     merge,
-                    count
+                    count,
+                    preserve_bbcode,
+                    raw_asset_properties
                 )
                 return {
                     "status": "success",
