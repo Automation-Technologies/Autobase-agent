@@ -26,7 +26,7 @@ class Tag(enum.Enum):
 class ConfirmationExecutor:
     CONF_URL = "https://steamcommunity.com/mobileconf"
     def __init__(self, identity_secret: str, my_steam_id: str, session: requests.Session) -> None:
-        self._my_steam_id = my_steam_id
+        self._my_steam_id = str(my_steam_id)
         self._identity_secret = identity_secret
         self._session = session
     def send_trade_allow_request(self, trade_offer_id: str) -> dict:

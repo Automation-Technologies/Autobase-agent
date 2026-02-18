@@ -50,8 +50,9 @@ def generate_confirmation_key(identity_secret: str, tag: str, timestamp: int = i
 
 
 # It works, however it's different that one generated from mobile app
-def generate_device_id(steam_id: str) -> str:
-    hexed_steam_id = sha1(steam_id.encode('ascii')).hexdigest()
+def generate_device_id(steam_id: str | int) -> str:
+    steam_id_str = str(steam_id)
+    hexed_steam_id = sha1(steam_id_str.encode('ascii')).hexdigest()
     return 'android:' + '-'.join((
         hexed_steam_id[:8],
         hexed_steam_id[8:12],
