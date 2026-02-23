@@ -34,7 +34,7 @@ class SettingsFrame(ctk.CTkFrame):
         # Agent Token
         ctk.CTkLabel(
             form_frame,
-            text="Agent Token (UUID):",
+            text="Agent Token:",
             font=ctk.CTkFont(size=14, weight="bold"),
             anchor="w"
         ).pack(pady=(30, 5), padx=30, fill="x")
@@ -62,7 +62,7 @@ class SettingsFrame(ctk.CTkFrame):
         # Информация
         info_label = ctk.CTkLabel(
             form_frame,
-            text="💡 Эти данные выдаются при регистрации агента в AutoBase",
+            text="💡 Выдача токена происходит по команде /token в тг-боте @TAsteamBot",
             font=ctk.CTkFont(size=11),
             text_color="gray"
         )

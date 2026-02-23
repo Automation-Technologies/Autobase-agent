@@ -49,7 +49,7 @@ class DashboardFrame(ctk.CTkFrame):
         # Кнопка добавления аккаунтов
         self.ingest_btn = ctk.CTkButton(
             self,
-            text="➕ Добавить новые аккаунты (Ingestion)",
+            text="➕ Добавить новые аккаунты в бота",
             height=40,
             fg_color="#0066CC",
             hover_color="#0055AA",
