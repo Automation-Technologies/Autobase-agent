@@ -208,9 +208,9 @@ class AgentGUI(TkinterDnD.Tk):
         """Обновить список аккаунтов."""
         self.frame_accounts.update_accounts(accounts)
     
-    def update_config_fields(self, server_ip: str, agent_token: str) -> None:
+    def update_config_fields(self, agent_token: str) -> None:
         """Обновить поля конфигурации."""
-        self.frame_settings.set_fields(server_ip, agent_token)
+        self.frame_settings.set_fields(agent_token)
 
     # === Глобальные бинды для текстовых полей ===
 

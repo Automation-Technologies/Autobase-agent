@@ -13,6 +13,7 @@ from core.account_manager import AccountManager
 from core.command_executor import CommandExecutor
 from core.config_manager import ConfigManager
 from core.ingestion_client import IngestionClient
+from core.server_settings import ServerSettings
 from core.mafile_scanner import MaFileScanner
 from core.proxy_manager import ProxyManager
 from core.websocket_client import WebSocketClient
@@ -63,11 +64,10 @@ class Agent:
 
         self._log("Запуск агента...")
 
-        # Загружаем конфиг
-        server_url = self.config_manager.get_server_ip()
+        server_url = ServerSettings.WS_URL
         agent_token = self.config_manager.get_agent_token()
 
-        if not server_url or not agent_token:
+        if not agent_token:
             self._log("❌ Ошибка: Заполните настройки подключения")
             return
 
@@ -122,12 +122,11 @@ class Agent:
 
         self._log(f"Найдено {len(accounts)} аккаунтов в maFiles")
 
-        # Конфиг для связи с AgentGateway (используем server_ip как HTTP URL)
-        server_url = self.config_manager.get_server_ip()
+        server_url = ServerSettings.HTTP_URL
         agent_token = self.config_manager.get_agent_token()
 
-        if not server_url or not agent_token:
-            self._log("❌ Ошибка: заполните Server IP и Agent Token в настройках")
+        if not agent_token:
+            self._log("❌ Ошибка: заполните Agent Token в настройках")
             return
 
         ingestion_client = IngestionClient(server_url, agent_token)
@@ -315,9 +314,8 @@ class Agent:
         self.proxy_manager.remove_proxy_for_login(login)
         self._log(f"✅ Прокси удален для {login} (Direct IP)")
 
-    def save_config(self, server_ip: str, agent_token: str) -> None:
+    def save_config(self, agent_token: str) -> None:
         """Сохранить конфигурацию."""
-        self.config_manager.update_server_ip(server_ip)
         self.config_manager.update_agent_token(agent_token)
         self._log("✅ Конфигурация сохранена")
 
@@ -346,7 +344,6 @@ class Agent:
     def get_config(self) -> Dict[str, str]:
         """Получить текущую конфигурацию."""
         return {
-            "server_ip": self.config_manager.get_server_ip(),
             "agent_token": self.config_manager.get_agent_token()
         }
 

@@ -20,7 +20,6 @@ class ConfigManager:
         if not self.config_path.exists():
             self.config_path.parent.mkdir(parents=True, exist_ok=True)
             default_config = {
-                "server_ip": "",
                 "agent_token": ""
             }
             self.save_config(default_config)
@@ -35,21 +34,10 @@ class ConfigManager:
         with open(self.config_path, 'w', encoding='utf-8') as f:
             json.dump(config, f, indent=2, ensure_ascii=False)
     
-    def get_server_ip(self) -> str:
-        """Получить IP сервера."""
-        config = self.load_config()
-        return config["server_ip"]
-    
     def get_agent_token(self) -> str:
         """Получить токен агента."""
         config = self.load_config()
-        return config["agent_token"]
-    
-    def update_server_ip(self, server_ip: str) -> None:
-        """Обновить IP сервера."""
-        config = self.load_config()
-        config["server_ip"] = server_ip
-        self.save_config(config)
+        return config.get("agent_token", "")
     
     def update_agent_token(self, token: str) -> None:
         """Обновить токен агента."""

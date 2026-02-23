@@ -95,10 +95,7 @@ class Application:
         """Загрузить начальные данные в GUI."""
         # Конфиг
         config = self.agent.get_config()
-        self.gui.update_config_fields(
-            config["server_ip"],
-            config["agent_token"]
-        )
+        self.gui.update_config_fields(config["agent_token"])
         
         # Аккаунты
         accounts = self.agent.get_accounts_with_proxies()
@@ -146,9 +143,9 @@ class Application:
         accounts = self.agent.get_accounts_with_proxies()
         self.gui.update_accounts_list(accounts)
     
-    def save_config(self, server_ip: str, agent_token: str) -> None:
+    def save_config(self, agent_token: str) -> None:
         """Сохранить конфигурацию."""
-        self.agent.save_config(server_ip, agent_token)
+        self.agent.save_config(agent_token)
     
     def save_proxy(self, login: str, proxy: str) -> None:
         """Сохранить прокси."""
