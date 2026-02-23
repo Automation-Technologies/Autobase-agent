@@ -1,11 +1,20 @@
 # AutoBase Agent Bot - Инструкция по установке и использованию
 
-## 🚀 Установка
+## 🚀 Быстрый старт
 
-1. **Скачайте** `AutoBaseBot.exe` из релиза
-2. **Создайте** отдельную папку для работы бота (например, `C:\AutoBaseBot\`)
-3. **Поместите** `AutoBaseBot.exe` в созданную папку
-4. **Запустите** `AutoBaseBot.exe` - все необходимые папки создадутся автоматически
+[![Download EXE](https://img.shields.io/badge/Скачать_AutoBaseBot.exe-v1.0.0-blue?style=for-the-badge&logo=github)](https://github.com/Automation-Technologies/Autobase-agent/releases/download/v1.0.0/AutoBaseBot.exe)
+
+> **[Нажмите здесь, чтобы скачать последнюю версию напрямую]**
+> (https://github.com/Automation-Technologies/Autobase-agent/releases/download/v1.0.0/AutoBaseBot.exe)
+
+---
+
+## 🛠 Установка
+
+1. **Скачайте** `AutoBaseBot.exe` по ссылке выше.
+2. **Создайте** отдельную папку для работы бота (например, `C:\AutoBaseBot\`).
+3. **Поместите** скачанный файл в эту папку.
+4. **Запустите** `AutoBaseBot.exe` — все необходимые подпапки (`maFiles`, `config`, `logs`) создадутся автоматически при первом запуске.
 
 
 ---
