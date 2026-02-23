@@ -30,23 +30,14 @@ class SettingsFrame(ctk.CTkFrame):
         # Контейнер для полей
         form_frame = ctk.CTkFrame(self, corner_radius=10)
         form_frame.pack(pady=20, padx=50, fill="both", expand=True)
-        
-        # Подключение к серверу (информативно)
-        ctk.CTkLabel(
-            form_frame,
-            text=f"Подключение к серверу:\n{ServerSettings.WS_URL}",
-            font=ctk.CTkFont(size=14, weight="bold"),
-            anchor="w",
-            text_color="gray"
-        ).pack(pady=(30, 5), padx=30, fill="x")
-        
+
         # Agent Token
         ctk.CTkLabel(
             form_frame,
             text="Agent Token (UUID):",
             font=ctk.CTkFont(size=14, weight="bold"),
             anchor="w"
-        ).pack(pady=(10, 5), padx=30, fill="x")
+        ).pack(pady=(30, 5), padx=30, fill="x")
         
         self.token_entry = ctk.CTkEntry(
             form_frame,
