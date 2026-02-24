@@ -2,10 +2,7 @@
 
 ## 🚀 Быстрый старт
 
-[![Download EXE](https://img.shields.io/badge/Скачать_TA-Agent.exe-v1.0.0-blue?style=for-the-badge&logo=github)](https://github.com/Automation-Technologies/Autobase-agent/releases/download/v1.0.0/TA-Agent.exe)
-
-> **[Нажмите здесь, чтобы скачать последнюю версию напрямую]**
-> (https://github.com/Automation-Technologies/Autobase-agent/releases/download/v1.0.0/TA-Agent.exe)
+[![Download EXE](https://img.shields.io/badge/Скачать-TA--Agent.exe-blue?style=for-the-badge&logo=github)](https://github.com/Automation-Technologies/Autobase-agent/releases/download/v1.0.0/TA-Agent.exe)
 
 ---
 
