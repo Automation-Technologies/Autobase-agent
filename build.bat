@@ -1,7 +1,7 @@
 @echo off
 chcp 65001 >nul
 echo ========================================
-echo Сборка AutoBase Agent
+echo Сборка TA Agent
 echo ========================================
 echo.
 
@@ -53,12 +53,12 @@ if exist "build" rmdir /s /q "build"
 echo [6/6] Сборка исполняемого файла...
 pyinstaller build.spec --clean --noconfirm
 
-if exist "dist\AutoBaseAgent.exe" (
+if exist "dist\TA-Agent.exe" (
     echo.
     echo ========================================
     echo ✓ Сборка завершена успешно!
     echo ========================================
-    echo Исполняемый файл: dist\AutoBaseAgent.exe
+    echo Исполняемый файл: dist\TA-Agent.exe
     echo.
     echo Создайте ярлык для запуска приложения.
     echo.

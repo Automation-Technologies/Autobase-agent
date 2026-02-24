@@ -37,7 +37,7 @@ class AgentGUI(TkinterDnD.Tk):
         self.on_delete_account = on_delete_account
         
         # Настройки окна
-        self.title("AutoBase Agent")
+        self.title("TA Agent")
         self.geometry("900x800")
         self.minsize(900, 800)
         self.resizable(True, True)
@@ -121,7 +121,7 @@ class AgentGUI(TkinterDnD.Tk):
         # Логотип
         self.logo_label = ctk.CTkLabel(
             self.sidebar_frame,
-            text="🤖\nAutoBase\nAgent",
+            text="🤖\nTA Agent",
             font=ctk.CTkFont(size=20, weight="bold")
         )
         self.logo_label.grid(row=0, column=0, padx=20, pady=(30, 20))
