@@ -1,6 +1,7 @@
 """
 WebSocket клиент для связи с AutoBase сервером.
 """
+import asyncio
 import json
 import logging
 from decimal import Decimal
@@ -36,6 +37,18 @@ class WebSocketClient:
         self.websocket: Optional[WebSocketClientProtocol] = None
         self.is_running = False
         self.logger = logging.getLogger("WebSocketClient")
+
+    async def _heartbeat_loop(self) -> None:
+        """Фоновая отправка 'ping' сообщений чтобы соединение между агентом и сервером не разрывалось в простое."""
+        while self.is_running and self.websocket:
+            try:
+                await self.websocket.send(json.dumps({"type": "ping"}))
+                await asyncio.sleep(40)
+            except websockets.exceptions.ConnectionClosed:
+                break
+            except Exception as e:
+                self.logger.debug(f"Heartbeat error: {e}")
+                break
 
     async def connect(self, manifest: List[str]) -> None:
         """
@@ -85,6 +98,8 @@ class WebSocketClient:
                 }
                 await websocket.send(json.dumps(manifest_msg))
                 self.logger.info(f"Манифест отправлен: {len(manifest)} логинов: {manifest}")
+
+                asyncio.create_task(self._heartbeat_loop())
 
                 # Слушаем команды
                 await self._listen_loop()
