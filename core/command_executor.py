@@ -730,29 +730,51 @@ class CommandExecutor:
             }
     
     async def _market_get_history(self, client: SteamClient, args: Dict[str, Any]) -> Dict[str, Any]:
-        """Получить историю покупок/продаж на Steam Market."""
-        start = args.get("start", 0)
-        count = args.get("count", 100)
-        
+        """Получить историю покупок/продаж на Steam Market на стороне агента."""
+        from steampy.models import SteamUrl
+        from steampy.exceptions import ApiException
+
+        if "start" not in args or "count" not in args:
+            return {"status": "error", "message": "Не указаны start или count"}
+
+        start = int(args["start"])
+        count = int(args["count"])
+
         loop = asyncio.get_event_loop()
-        
+
+        def _request_history() -> Dict[str, Any]:
+            url = "/".join([SteamUrl.COMMUNITY_URL, "market", "myhistory", "render"])
+            params = {
+                "query": "",
+                "start": start,
+                "count": count,
+            }
+
+            response = client._session.get(url, params=params)  # type: ignore[attr-defined]
+            response.encoding = "utf-8-sig"
+
+            if response.status_code != 200:
+                raise ApiException(
+                    f"get_market_history failed. HTTP code: {response.status_code}"
+                )
+
+            data = response.json()
+            if not data.get("success"):
+                raise ApiException("get_market_history: Steam API returned success=false")
+
+            return data
+
         try:
-            result = await loop.run_in_executor(
-                None,
-                client.market.get_market_history,
-                start,
-                count
-            )
-            
+            result = await loop.run_in_executor(None, _request_history)
             return {
                 "status": "success",
-                "result": result
+                "result": result,
             }
         except Exception as e:
             self.logger.error(f"Ошибка получения истории маркета: {e}", exc_info=True)
             return {
                 "status": "error",
-                "message": str(e)
+                "message": str(e),
             }
 
     async def _market_fetch_price_history(self, client: SteamClient, args: Dict[str, Any]) -> Dict[str, Any]:
