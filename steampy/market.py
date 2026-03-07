@@ -214,7 +214,11 @@ class SteamMarket:
                     n_total = int(total_pattern.group(1).decode('utf-8').replace(',', ''))
                     
                     if n_showing < n_total < 1000:
-                        url = "%s/market/mylistings/render/?query=&start=%s&count=%s" % (SteamUrl.COMMUNITY_URL, n_showing, -1)
+                        url = "%s/market/mylistings/render/?query=&start=%s&count=%s" % (
+                            SteamUrl.COMMUNITY_URL,
+                            n_showing,
+                            -1
+                        )
                         response = self._session.get(url, timeout=60)
                         if response.status_code != 200:
                             last_error = f"HTTP code: {response.status_code} (render endpoint)"
@@ -228,20 +232,26 @@ class SteamMarket:
                         listing_id_to_assets_address = get_listing_id_to_assets_address_from_html(jresp.get("hovers"))
                         listings_2 = get_market_sell_listings_from_api(jresp.get("results_html"))
                         listings_2 = merge_items_with_descriptions_from_listing(
-                            listings_2, 
+                            listings_2,
                             listing_id_to_assets_address,
                             jresp.get("assets")
                         )
-                        listings["sell_listings"] = {**listings["sell_listings"], **listings_2["sell_listings"]}
+                        listings["sell_listings"] = {
+                            **listings["sell_listings"],
+                            **listings_2["sell_listings"],
+                        }
                     else:
+                        # n_total >= 1000: пагинация по 100 записей с обязательной задержкой между запросами
                         for i in range(0, n_total, 100):
-                            url = "%s/market/mylistings/?query=&start=%s&count=%s" % (SteamUrl.COMMUNITY_URL, n_showing + i, 100)
+                            url = "%s/market/mylistings/?query=&start=%s&count=%s" % (
+                                SteamUrl.COMMUNITY_URL,
+                                n_showing + i,
+                                100
+                            )
                             response = self._session.get(url, timeout=60)
                             if response.status_code != 200:
                                 last_error = f"HTTP code: {response.status_code} (pagination endpoint, offset {i})"
                                 if attempt < max_retries - 1:
-                                    delay = 2 ** attempt
-                                    time.sleep(delay)
                                     break
                                 else:
                                     raise ApiException(f"There was a problem getting sell listings. {last_error}")
@@ -249,14 +259,16 @@ class SteamMarket:
                             listing_id_to_assets_address = get_listing_id_to_assets_address_from_html(jresp.get("hovers"))
                             listings_2 = get_market_sell_listings_from_api(jresp.get("results_html"))
                             listings_2 = merge_items_with_descriptions_from_listing(
-                                listings_2, 
+                                listings_2,
                                 listing_id_to_assets_address,
                                 jresp.get("assets")
                             )
-                            listings["sell_listings"] = {**listings["sell_listings"], **listings_2["sell_listings"]}
-                        else:
-                            continue
-                        continue
+                            listings["sell_listings"] = {
+                                **listings["sell_listings"],
+                                **listings_2["sell_listings"],
+                            }
+
+                            time.sleep(5.4)
 
                 time.sleep(5.4)
 
