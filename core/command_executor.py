@@ -559,7 +559,7 @@ class CommandExecutor:
             }
 
     async def _market_create_sell_order(self, client: SteamClient, args: Dict[str, Any]) -> Dict[str, Any]:
-        """Создать ордер на продажу."""
+        """Создать ордер на продажу. app_id и context_id берутся из args (1-в-1 с steam_bot)."""
         from steampy.models import GameOptions
 
         assetid = args.get("assetid")
@@ -567,14 +567,10 @@ class CommandExecutor:
         context_id = args.get("context_id")
         money_to_receive = args.get("money_to_receive")
 
-        if not assetid or not app_id or not money_to_receive:
-            return {"status": "error", "message": "Не указаны assetid, app_id или money_to_receive"}
+        if not assetid or not app_id or context_id is None or not money_to_receive:
+            return {"status": "error", "message": "Не указаны assetid, app_id, context_id или money_to_receive"}
 
-        # Жёстко резолвим GameOptions через единый резолвер без копипасты и дефолтов
-        try:
-            game = _GameOptionsResolver.resolve(app_id)
-        except ValueError as e:
-            return {"status": "error", "message": str(e)}
+        game = GameOptions(app_id, context_id)
 
         loop = asyncio.get_event_loop()
 
