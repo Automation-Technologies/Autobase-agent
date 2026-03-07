@@ -26,3 +26,4 @@ dist/
 # Security
 security.salt
 .github
+maFiles
