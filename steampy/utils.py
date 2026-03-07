@@ -1,51 +1,30 @@
+import decimal
 import os
-import re
-import requests
-import re
+
 import copy
-import math
 import struct
+import urllib.parse as urlparse
+import re
 from typing import List
-from decimal import Decimal
-from urllib.parse import urlparse, parse_qs
-from datetime import datetime
-from bs4 import BeautifulSoup, Tag
-from requests.structures import CaseInsensitiveDict
+
+from bs4 import BeautifulSoup, Tag, SoupStrainer
+from curl_cffi import requests
 
 from steampy.models import GameOptions
-from steampy.exceptions import ProxyConnectionError, LoginRequired
-
-EN_MONTHS = {
-    'jan': 1, 'feb': 2, 'mar': 3, 'apr': 4,
-    'may': 5, 'jun': 6, 'jul': 7, 'aug': 8,
-    'sep': 9, 'oct': 10, 'nov': 11, 'dec': 12
-}
-
-RU_MONTHS = {
-    'янв': 1, 'фев': 2, 'мар': 3, 'апр': 4,
-    'май': 5, 'июн': 6, 'июл': 7, 'авг': 8,
-    'сен': 9, 'окт': 10, 'ноя': 11, 'дек': 12
-}
 
 
-def login_required(func):
-    def func_wrapper(self, *args, **kwargs):
-        if not self.was_login_executed:
-            raise LoginRequired('Use login method first')
-        else:
-            return func(self, *args, **kwargs)
-
-    return func_wrapper
+def is_balance_limit_error(error: Exception) -> bool:
+    message = str(error)
+    return (
+            ("success': 25" in message or '"success": 25' in message)
+            and "10 times your current wallet balance" in message
+    )
 
 
 def text_between(text: str, begin: str, end: str) -> str:
-    try:
-        start = text.index(begin) + len(begin)
-        end = text.index(end, start)
-        return text[start:end]
-    except ValueError:
-        # Если подстроки не найдены, возвращаем пустую строку
-        return ""
+    start = text.index(begin) + len(begin)
+    end = text.index(end, start)
+    return text[start:end]
 
 
 def texts_between(text: str, begin: str, end: str):
@@ -69,85 +48,19 @@ def steam_id_to_account_id(steam_id: str) -> str:
     return str(struct.unpack('>L', int(steam_id).to_bytes(8, byteorder='big')[4:])[0])
 
 
-def parse_price(price: str) -> Decimal:
-    # Убираем неразрывные пробелы, пробелы, валютные символы и приведение к точке
-    clean = re.sub(r'[^\d,\.]', '', price.replace('\xa0', '').replace(' ', ''))
-    clean = clean.replace(',', '.')  # Для всех европейских форматов
-    try:
-        return Decimal(clean)
-    except Exception as e:
-        raise ValueError(f"Не удалось распарсить цену из строки '{price}': {e}")
-
-
-def calculate_gross_price(price_net: Decimal, publisher_fee: Decimal, steam_fee: Decimal = Decimal('0.05')) -> Decimal:
-    """Calculate the price including the publisher's fee and the Steam fee.
-
-    Arguments:
-        price_net (Decimal): The amount that the seller receives after a market transaction.
-        publisher_fee (Decimal): The Publisher Fee is a game specific fee that is determined and collected by the game
-            publisher. Most publishers have a `10%` fee - `Decimal('0.10')` with a minimum fee of `$0.01`.
-        steam_fee (Decimal): The Steam Transaction Fee is collected by Steam and is used to protect against nominal
-            fraud incidents and cover the cost of development of this and future Steam economy features. The fee is
-            currently `5%` (with a minimum fee of `$0.01`). This fee may be increased or decreased by Steam in the
-            future.
-    Returns:
-        Decimal: Gross price (including fees) - the amount that the buyer pays during a market transaction
-    """
-    price_net *= 100
-    steam_fee_amount = int(math.floor(max(price_net * steam_fee, 1)))
-    publisher_fee_amount = int(math.floor(max(price_net * publisher_fee, 1)))
-    price_gross = price_net + steam_fee_amount + publisher_fee_amount
-    return Decimal(price_gross) / 100
-
-
-def calculate_net_price(price_gross: Decimal, publisher_fee: Decimal, steam_fee: Decimal = Decimal('0.05')) -> Decimal:
-    """Calculate the price without the publisher's fee and the Steam fee.
-
-    Arguments:
-        price_gross (Decimal): The amount that the buyer pays during a market transaction.
-        publisher_fee (Decimal): The Publisher Fee is a game specific fee that is determined and collected by the game
-            publisher. Most publishers have a `10%` fee - `Decimal('0.10')` with a minimum fee of `$0.01`.
-        steam_fee (Decimal): The Steam Transaction Fee is collected by Steam and is used to protect against nominal
-            fraud incidents and cover the cost of development of this and future Steam economy features. The fee is
-            currently `5%` (with a minimum fee of `$0.01`). This fee may be increased or decreased by Steam in the
-            future.
-    Returns:
-        Decimal: Net price (without fees) - the amount that the seller receives after a market transaction.
-    """
-    price_gross *= 100
-    estimated_net_price = Decimal(int(price_gross / (steam_fee + publisher_fee + 1)))
-    estimated_gross_price = calculate_gross_price(estimated_net_price / 100, publisher_fee, steam_fee) * 100
-
-    # since calculate_gross_price has a math.floor, we could be off a cent or two. Let's check:
-    iterations = 0  # shouldn't be needed, but included to be sure nothing unforeseen causes us to get stuck
-    ever_undershot = False
-    while estimated_gross_price != price_gross and iterations < 10:
-        if estimated_gross_price > price_gross:
-            if ever_undershot:
-                break
-            estimated_net_price -= 1
-        else:
-            ever_undershot = True
-            estimated_net_price += 1
-
-        estimated_gross_price = calculate_gross_price(estimated_net_price / 100, publisher_fee, steam_fee) * 100
-        iterations += 1
-    return estimated_net_price / 100
+def parse_price(price: str) -> decimal.Decimal:
+    price = price.replace(' ', '')
+    pattern = r'\D?(\d*)(\.|,)?(\d*)'
+    tokens = re.search(pattern, price, re.UNICODE)
+    decimal_str = tokens.group(1) + '.' + tokens.group(3)
+    return decimal.Decimal(decimal_str)
 
 
 def merge_items_with_descriptions_from_inventory(inventory_response: dict, game: GameOptions) -> dict:
-    if not inventory_response:
-        return {}
-
     inventory = inventory_response.get('assets', [])
     if not inventory:
         return {}
-
-    descriptions_raw = inventory_response.get('descriptions', [])
-    if not descriptions_raw:
-        return {}
-
-    descriptions = {get_description_key(description): description for description in descriptions_raw}
+    descriptions = {get_description_key(description): description for description in inventory_response['descriptions']}
     return merge_items(inventory, descriptions, context_id=game.context_id)
 
 
@@ -170,7 +83,8 @@ def merge_items_with_descriptions_from_offer(offer: dict, descriptions: dict) ->
     return offer
 
 
-def merge_items_with_descriptions_from_listing(listings: dict, ids_to_assets_address: dict, descriptions: dict) -> dict:
+def merge_items_with_descriptions_from_listing(listings: dict, ids_to_assets_address: dict,
+                                               descriptions: dict) -> dict:
     for listing_id, listing in listings.get("sell_listings").items():
         asset_address = ids_to_assets_address[listing_id]
         description = descriptions[asset_address[0]][asset_address[1]][asset_address[2]]
@@ -192,110 +106,63 @@ def merge_items(items: List[dict], descriptions: dict, **kwargs) -> dict:
 
 
 def get_market_listings_from_html(html) -> dict:
-    document = BeautifulSoup(html, "html.parser")
+    only_my_listings = SoupStrainer(id="myListings")
+    document = BeautifulSoup(html, "lxml", parse_only=only_my_listings)
     nodes = document.select("div[id=myListings]")[0].findAll("div", {"class": "market_home_listing_table"})
     sell_listings_dict = {}
     buy_orders_dict = {}
     for node in nodes:
-        if "My sell listings" in node.text:
+        if "My sell listings" in node.text or "Мои лоты на продажу" in node.text:
             sell_listings_dict = get_sell_listings_from_node(node)
-        elif "My listings awaiting confirmation" in node.text:
+        elif "My listings awaiting confirmation" in node.text or "Лоты, ожидающие подтверждения" in node.text:
             sell_listings_awaiting_conf = get_sell_listings_from_node(node)
             for listing in sell_listings_awaiting_conf.values():
                 listing["need_confirmation"] = True
             sell_listings_dict.update(sell_listings_awaiting_conf)
-        elif "My buy orders" in node.text:
+        elif "My buy orders" in node.text or "Мои запросы на покупку" in node.text:
             buy_orders_dict = get_buy_orders_from_node(node)
     return {"buy_orders": buy_orders_dict, "sell_listings": sell_listings_dict}
 
 
-def parse_created_on(date_str: str) -> str | None:
-    """Преобразует '10 Apr' или '10 апр' → ISO-дату."""
-    try:
-        parts = date_str.strip().lower().split()
-        if len(parts) != 2:
-            print(f"❌ Unexpected format: '{date_str}'")
-            return None
-
-        day = int(parts[0])
-        month_raw = parts[1][:3]  # сокращение месяца
-        # print(f"🔍 parse_created_on: day={day}, month_raw='{month_raw}'")
-
-        # Словари уже в нижнем регистре
-        month = RU_MONTHS.get(month_raw) or EN_MONTHS.get(month_raw)
-        if not month:
-            print(f"❌ Month not recognized: '{month_raw}' in '{date_str}'")
-            return None
-
-        now = datetime.utcnow()
-        dt = datetime(now.year, month, day)
-        if dt > now:
-            dt = datetime(now.year - 1, month, day)
-
-        return dt.isoformat()
-    except Exception as e:
-        print(f" Exception while parsing '{date_str}': {e}")
-        return None
-
-
 def get_sell_listings_from_node(node: Tag) -> dict:
-    sell_listings_raw = node.find_all("div", {"id": re.compile(r"mylisting_\d+")})
+    sell_listings_raw = node.findAll("div", {"id": re.compile(r'mylisting_\d+')})
     sell_listings_dict = {}
-
     for listing_raw in sell_listings_raw:
         spans = listing_raw.select("span[title]")
-        listing_id = listing_raw.attrs["id"].replace("mylisting_", "")
-
-        buyer_pay_raw = spans[0].text.strip() if len(spans) > 0 else "0"
-        you_receive_raw = spans[1].text.strip()[1:-1] if len(spans) > 1 else "0"
-
-        try:
-            buyer_pay = parse_price(buyer_pay_raw)
-        except Exception as e:
-            buyer_pay = Decimal("0.00")
-
-        try:
-            you_receive = parse_price(you_receive_raw)
-        except Exception as e:
-            you_receive = Decimal("0.00")
-
-        created_raw = listing_raw.find("div", {"class": "market_listing_listed_date"})
-        created_on = created_raw.text.strip() if created_raw else ""
-        iso_created = parse_created_on(created_on)
-
         listing = {
-            "listing_id": listing_id,
-            "buyer_pay": buyer_pay,
-            "you_receive": you_receive,
-            "created_on": created_on,
-            "last_listing_update": iso_created,
-            "need_confirmation": False,
+            "listing_id": listing_raw.attrs["id"].replace("mylisting_", ""),
+            "buyer_pay": spans[0].text.strip(),
+            "you_receive": spans[1].text.strip()[1:-1],
+            "created_on": listing_raw.findAll("div", {"class": "market_listing_listed_date"})[0].text.strip(),
+            "need_confirmation": False
         }
-        # print(f"{listing_id} | raw_date: '{created_on}' -> parsed: {iso_created}")
-
-        sell_listings_dict[listing_id] = listing
-
+        sell_listings_dict[listing["listing_id"]] = listing
     return sell_listings_dict
 
 
 def get_market_sell_listings_from_api(html: str) -> dict:
-    document = BeautifulSoup(html, "html.parser")
+    document = BeautifulSoup(html, "lxml")
     sell_listings_dict = get_sell_listings_from_node(document)
     return {"sell_listings": sell_listings_dict}
 
 
 def get_buy_orders_from_node(node: Tag) -> dict:
+    from urllib.parse import unquote
     buy_orders_raw = node.findAll("div", {"id": re.compile('mybuyorder_\\d+')})
     buy_orders_dict = {}
     for order in buy_orders_raw:
+        mem = order
         qnt_price_raw = order.select("span[class=market_listing_price]")[0].text.split("@")
+        named = str(order.a).split(order.a.text)[0]
+        named = named.split('/')
+        named = named[len(named) - 1]
+        named = named.replace('">', '')
+        named = unquote(named)
         order = {
             "order_id": order.attrs["id"].replace("mybuyorder_", ""),
             "quantity": int(qnt_price_raw[0].strip()),
             "price": qnt_price_raw[1].strip(),
-            "item_name": order.a.text,
-            "icon_url": order.select(f"img[class=market_listing_item_img]")[0].attrs["src"].rsplit('/', 2)[-2],
-            "game_name": order.select("span[class=market_listing_game_name]")[0].text
+            "item_name": named
         }
         buy_orders_dict[order["order_id"]] = order
     return buy_orders_dict
@@ -320,11 +187,16 @@ def get_description_key(item: dict) -> str:
 
 
 def get_key_value_from_url(url: str, key: str, case_sensitive: bool = True) -> str:
-    params = urlparse(url).query
+    params = urlparse.urlparse(url).query
     if case_sensitive:
-        return parse_qs(params)[key][0]
+        return urlparse.parse_qs(params)[key][0]
     else:
-        return CaseInsensitiveDict(parse_qs(params))[key][0]
+        parsed = urlparse.parse_qs(params)
+        target = key.lower()
+        for current_key, value in parsed.items():
+            if current_key.lower() == target:
+                return value[0]
+        raise KeyError(key)
 
 
 def load_credentials():
@@ -338,11 +210,3 @@ class Credentials:
         self.login = login
         self.password = password
         self.api_key = api_key
-
-
-def ping_proxy(proxies: dict):
-    try:
-        requests.get('https://steamcommunity.com/', proxies=proxies)
-        return True
-    except Exception as e:
-        raise ProxyConnectionError("Proxy not working for steamcommunity.com")

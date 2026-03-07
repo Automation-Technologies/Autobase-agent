@@ -1,21 +1,16 @@
-from time import time
 import base64
-import time
-import requests
-from time import time
-from http import HTTPStatus
-from base64 import b64encode
-from rsa import encrypt, PublicKey
-from requests import Session, Response
-from steampy import guard
-from steampy.models import SteamUrl
-from steampy.exceptions import InvalidCredentials, CaptchaRequired, ApiException
-import rsa
 import json
-from urllib.parse import urlparse
 from typing import Optional
+from urllib.parse import urlparse
 
-# Список ошибок Steam (код и текстовое описание)
+import rsa
+from curl_cffi.requests import Session, Response
+
+from steampy import guard
+from steampy.exceptions import InvalidCredentials, CaptchaRequired
+from steampy.models import SteamUrl
+
+
 errors = [
     {"x": 1, "text": "All good! No error. (k_EResultOK)"},
     {"x": 2, "text": "Generic failure. (k_EResultFail)"},
@@ -64,10 +59,8 @@ errors = [
     {"x": 46, "text": "Action allowed only because the request is from an administrator. (k_EResultAdministratorOK)"},
     {"x": 47, "text": "Content version mismatch. (k_EResultContentVersion)"},
     {"x": 48, "text": "Try another CM server. (k_EResultTryAnotherCM)"},
-    {"x": 49,
-     "text": "Cached logon failed: you are already logged in elsewhere. (k_EResultPasswordRequiredToKickSession)"},
-    {"x": 50,
-     "text": "User is logged in from another location. (Deprecated; use 6). (k_EResultAlreadyLoggedInElsewhere)"},
+    {"x": 49, "text": "Cached logon failed: you are already logged in elsewhere. (k_EResultPasswordRequiredToKickSession)"},
+    {"x": 50, "text": "User is logged in from another location. (Deprecated; use 6). (k_EResultAlreadyLoggedInElsewhere)"},
     {"x": 51, "text": "Operation suspended/paused (e.g. content download). (k_EResultSuspended)"},
     {"x": 52, "text": "Operation canceled, typically by user. (k_EResultCancelled)"},
     {"x": 53, "text": "Operation canceled due to data corruption. (k_EResultDataCorruption)"},
@@ -76,8 +69,7 @@ errors = [
     {"x": 56, "text": "Could not verify password, none is set. (k_EResultPasswordUnset)"},
     {"x": 57, "text": "External account not linked to Steam. (k_EResultExternalAccountUnlinked)"},
     {"x": 58, "text": "PlayStation ticket invalid. (k_EResultPSNTicketInvalid)"},
-    {"x": 59,
-     "text": "External account already linked to another Steam account. (k_EResultExternalAccountAlreadyLinked)"},
+    {"x": 59, "text": "External account already linked to another Steam account. (k_EResultExternalAccountAlreadyLinked)"},
     {"x": 60, "text": "Remote file conflict. (k_EResultRemoteFileConflict)"},
     {"x": 61, "text": "Illegal password. (k_EResultIllegalPassword)"},
     {"x": 62, "text": "New value is the same as the old one. (k_EResultSameAsPreviousValue)"},
@@ -126,7 +118,7 @@ errors = [
     {"x": 105, "text": "IP is banned from this action. (k_EResultIPBanned)"},
     {"x": 106, "text": "GSLT has expired due to inactivity. (k_EResultGSLTExpired)"},
     {"x": 107, "text": "Insufficient funds. (k_EResultInsufficientFunds)"},
-    {"x": 108, "text": "Too many pending requests. (k_EResultTooManyPending)"}
+    {"x": 108, "text": "Too many pending requests. (k_EResultTooManyPending)"},
 ]
 
 
@@ -134,19 +126,19 @@ class LoginExecutor:
     def __init__(self, username: str, password: str, shared_secret: str, session: Session) -> None:
         self.username = username
         self.password = password
-        self.one_time_code = ''
+        self.one_time_code = ""
         self.shared_secret = shared_secret
-        self.session = session  # Настройте session.proxies при необходимости
-        self.client_id = ''
-        self.steamid = ''
-        self.request_id = ''
-        self.refresh_token = ''
-        self.nonce_store = ''
-        self.auth_store = ''
-        self.nonce_com = ''
-        self.auth_com = ''
+        self.session = session
+        self.client_id = ""
+        self.steamid = ""
+        self.request_id = ""
+        self.refresh_token = ""
+        self.nonce_store = ""
+        self.auth_store = ""
+        self.nonce_com = ""
+        self.auth_com = ""
 
-    def _write_log(self, message: str):
+    def _write_log(self, message: str) -> None:
         with open("steam.log", "a", encoding="utf-8") as f:
             f.write(message)
 
@@ -172,23 +164,25 @@ class LoginExecutor:
         self._write_log(res_info)
         return response
 
-    def _api_call(self, method: str, service: str, endpoint: str, version: str = 'v1', params: dict = None) -> Response:
-        url = '/'.join([SteamUrl.API_URL, service, endpoint, version])
+    def _api_call(
+        self, method: str, service: str, endpoint: str, version: str = "v1", params: Optional[dict] = None
+    ) -> Response:
+        url = "/".join([SteamUrl.API_URL, service, endpoint, version])
         headers = {
-            "Referer": SteamUrl.COMMUNITY_URL + '/',
-            "Origin": SteamUrl.COMMUNITY_URL
+            "Referer": SteamUrl.COMMUNITY_URL + "/",
+            "Origin": SteamUrl.COMMUNITY_URL,
         }
-        if method.upper() == 'GET':
+        if method.upper() == "GET":
             return self._request("GET", url, params=params, headers=headers)
-        else:
-            return self._request("POST", url, data=params, headers=headers)
+        return self._request("POST", url, data=params, headers=headers)
 
     def login(self) -> Session:
         login_response = self._send_login_request()
-        # Если требуется, можно раскомментировать обработку капчи или Steam Guard:
+
         # self._check_for_captcha(login_response)
         # login_response = self._enter_steam_guard_if_necessary(login_response)
         # self._assert_valid_credentials(login_response)
+
         self._update_stem_guard(login_response)
         self._pool_sessions_steam()
         finalized_response = self._finalize_login()
@@ -199,40 +193,44 @@ class LoginExecutor:
     def _send_login_request(self) -> Response:
         rsa_params = self._fetch_rsa_params()
         encrypted_password = self._encrypt_password(rsa_params)
-        rsa_timestamp = rsa_params['rsa_timestamp']
+        rsa_timestamp = rsa_params["rsa_timestamp"]
         request_data = self._prepare_login_request_data(encrypted_password, rsa_timestamp)
         response = self._request("POST", SteamUrl.BeginAuthSessionViaCredentials_URL, data=request_data)
-        x_eresult = response.headers.get('x-eresult')
+
+        x_eresult = response.headers.get("x-eresult")
         if not x_eresult:
             raise Exception("Не удалось получить x-eresult из заголовков ответа.")
+
         eresult_int = int(x_eresult)
         if eresult_int != 1:
             match = next((item for item in errors if item["x"] == eresult_int), None)
             if match:
                 raise Exception(f"Авторизация не удалась, eResult={eresult_int}: {match['text']}")
-            else:
-                raise Exception(f"Авторизация не удалась, неизвестный eResult={eresult_int}.")
+            raise Exception(f"Авторизация не удалась, неизвестный eResult={eresult_int}.")
+
         return response
 
-    def set_sessionid_cookies(self):
-        # Устанавливаем дополнительные куки для Steam
-        self.session.cookies.set('steamRememberLogin', 'true', domain='')
-        self.session.cookies.set('timezoneOffset', '14400,0', domain='')
+    def set_sessionid_cookies(self) -> None:
+        self.session.cookies.set("steamRememberLogin", "true", domain="steamcommunity.com")
+        self.session.cookies.set("steamRememberLogin", "true", domain="store.steampowered.com")
+        self.session.cookies.set("timezoneOffset", "14400,0", domain="steamcommunity.com")
 
         headers = {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/127.0.0.0 Safari/537.36",
+            "User-Agent": (
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+                "(KHTML, like Gecko) Chrome/127.0.0.0 Safari/537.36"
+            ),
             "Accept": "application/json, text/plain, */*",
             "Accept-Encoding": "gzip, deflate, br",
             "Connection": "keep-alive",
             "sec-ch-ua": '"Not)A;Brand";v="99", "Google Chrome";v="127", "Chromium";v="127"',
             "sec-ch-ua-mobile": "?0",
-            "sec-ch-ua-platform": '"Windows"'
+            "sec-ch-ua-platform": '"Windows"',
         }
 
-        # Выполняем GET-запрос к странице, которая устанавливает куку sessionid
         self._request("GET", "https://steamcommunity.com/my/home/", headers=headers)
         cookies = self.session.cookies.get_dict()
-        sessionid = cookies.get('sessionid')
+        sessionid = cookies.get("sessionid")
         if not sessionid:
             raise Exception("Ошибка: sessionid отсутствует в куках. Логин не удался.")
 
@@ -243,13 +241,13 @@ class LoginExecutor:
             "name": "sessionid",
             "value": sessionid,
             "domain": community_domain,
-            "path": "/"
+            "path": "/",
         }
         store_cookie = {
             "name": "sessionid",
             "value": sessionid,
             "domain": store_domain,
-            "path": "/"
+            "path": "/",
         }
 
         self.session.cookies.set(**community_cookie)
@@ -261,12 +259,12 @@ class LoginExecutor:
             "name": "sessionid",
             "value": sessionid,
             "domain": domain,
-            "path": "/"
+            "path": "/",
         }
 
     def _fetch_rsa_params(self, current_number_of_repetitions: int = 0) -> dict:
         maximal_number_of_repetitions = 5
-        # Выполняем запрос для установки начальных куки
+
         self.session.post(SteamUrl.COMMUNITY_URL)
         self.session.get(SteamUrl.COMMUNITY_URL)
 
@@ -275,114 +273,127 @@ class LoginExecutor:
             key_response = json.loads(response.text)
         except json.JSONDecodeError as e:
             raise Exception(
-                f"Ошибка декодирования JSON при получении RSA параметров: {e}. Текст ответа: {response.text}")
+                f"Ошибка декодирования JSON при получении RSA параметров: {e}. "
+                f"Текст ответа: {response.text}"
+            )
+
         try:
-            rsa_mod = int(key_response["response"]['publickey_mod'], 16)
-            rsa_exp = int(key_response["response"]['publickey_exp'], 16)
-            rsa_timestamp = key_response["response"]['timestamp']
+            rsa_mod = int(key_response["response"]["publickey_mod"], 16)
+            rsa_exp = int(key_response["response"]["publickey_exp"], 16)
+            rsa_timestamp = key_response["response"]["timestamp"]
             return {
-                'rsa_key': rsa.PublicKey(rsa_mod, rsa_exp),
-                'rsa_timestamp': rsa_timestamp
+                "rsa_key": rsa.PublicKey(rsa_mod, rsa_exp),
+                "rsa_timestamp": rsa_timestamp,
             }
         except KeyError:
             if current_number_of_repetitions < maximal_number_of_repetitions:
                 return self._fetch_rsa_params(current_number_of_repetitions + 1)
-            else:
-                raise ValueError('Could not obtain rsa-key')
+            raise ValueError("Could not obtain rsa-key")
 
     def _encrypt_password(self, rsa_params: dict) -> str:
-        encrypted = rsa.encrypt(self.password.encode('utf-8'), rsa_params['rsa_key'])
-        return base64.b64encode(encrypted).decode('utf-8')
+        encrypted = rsa.encrypt(self.password.encode("utf-8"), rsa_params["rsa_key"])
+        return base64.b64encode(encrypted).decode("utf-8")
 
     def _prepare_login_request_data(self, encrypted_password: str, rsa_timestamp: str) -> dict:
         return {
-            'persistence': "1",
-            'encrypted_password': encrypted_password,
-            'account_name': self.username,
-            'encryption_timestamp': rsa_timestamp,
+            "persistence": "1",
+            "encrypted_password": encrypted_password,
+            "account_name": self.username,
+            "encryption_timestamp": rsa_timestamp,
         }
 
     @staticmethod
     def _check_for_captcha(login_response: Response) -> None:
-        if login_response.json().get('captcha_needed', False):
-            raise CaptchaRequired('Captcha required')
+        if login_response.json().get("captcha_needed", False):
+            raise CaptchaRequired("Captcha required")
 
     def _enter_steam_guard_if_necessary(self, login_response: Response) -> Response:
-        if login_response.json().get('requires_twofactor', False):
+        if login_response.json().get("requires_twofactor", False):
             self.one_time_code = guard.generate_one_time_code(self.shared_secret)
             return self._send_login_request()
         return login_response
 
     @staticmethod
     def _assert_valid_credentials(login_response: Response) -> None:
-        if not login_response.json()['response'].get("client_id"):
+        response_json = login_response.json()
+        if not response_json.get("response", {}).get("client_id"):
             raise InvalidCredentials(
-                login_response.json()['response'].get('extended_error_message', 'Invalid credentials'))
+                response_json.get("response", {}).get("extended_error_message", "Invalid credentials")
+            )
 
     def _perform_redirects(self, response_dict: dict) -> None:
-        parameters = response_dict.get('transfer_parameters')
+        parameters = response_dict.get("transfer_parameters")
         if parameters is None:
-            raise Exception('Cannot perform redirects after login, no parameters fetched')
-        for url in response_dict.get('transfer_urls', []):
+            raise Exception("Cannot perform redirects after login, no parameters fetched")
+        for url in response_dict.get("transfer_urls", []):
             self._request("POST", url, data=parameters)
 
     def _fetch_home_page(self) -> Response:
-        return self._request("POST", SteamUrl.COMMUNITY_URL + '/my/home/')
+        return self._request("POST", SteamUrl.COMMUNITY_URL + "/my/home/")
 
-    def _update_stem_guard(self, login_response: Response):
+    def _update_stem_guard(self, login_response: Response) -> None:
         try:
             response_json = login_response.json()
         except json.JSONDecodeError as e:
-            raise Exception(f"Ошибка декодирования JSON в _update_stem_guard: {e}. Текст ответа: {login_response.text}")
+            raise Exception(
+                f"Ошибка декодирования JSON в _update_stem_guard: {e}. "
+                f"Текст ответа: {login_response.text}"
+            )
         self.client_id = response_json["response"]["client_id"]
         self.steamid = response_json["response"]["steamid"]
         self.request_id = response_json["response"]["request_id"]
+
         code_type = 3
         code = guard.generate_one_time_code(self.shared_secret)
         update_data = {
-            'client_id': self.client_id,
-            'steamid': self.steamid,
-            'code_type': code_type,
-            'code': code
+            "client_id": self.client_id,
+            "steamid": self.steamid,
+            "code_type": code_type,
+            "code": code,
         }
         self._request("POST", SteamUrl.UpdateAuthSessionWithSteamGuardCode_URL, data=update_data)
 
-    def _pool_sessions_steam(self):
+    def _pool_sessions_steam(self) -> None:
         pool_data = {
-            'client_id': self.client_id,
-            'request_id': self.request_id
+            "client_id": self.client_id,
+            "request_id": self.request_id,
         }
         response = self._request("POST", SteamUrl.PollAuthSessionStatus_URL, data=pool_data)
         try:
             response_json = response.json()
         except json.JSONDecodeError as e:
-            raise Exception(f"Ошибка декодирования JSON в _pool_sessions_steam: {e}. Текст ответа: {response.text}")
+            raise Exception(
+                f"Ошибка декодирования JSON в _pool_sessions_steam: {e}. "
+                f"Текст ответа: {response.text}"
+            )
         self.refresh_token = response_json.get("response", {}).get("refresh_token", "")
 
     def _finalize_login(self, proxies: Optional[dict] = None) -> Response:
         redir = "https://steamcommunity.com/login/home/?goto="
-        # Извлекаем sessionid из cookies
         sessionid = self.session.cookies.get("sessionid")
         if not sessionid:
             raise Exception("sessionid cookie not found in _finalize_login.")
-        files = {
-            'nonce': (None, self.refresh_token),
-            'sessionid': (None, sessionid),
-            'redir': (None, redir)
+
+        data = {
+            "nonce": self.refresh_token,
+            "sessionid": sessionid,
+            "redir": redir,
         }
         headers = {
-            'Referer': redir,
-            'Origin': 'https://steamcommunity.com'
+            "Referer": redir,
+            "Origin": "https://steamcommunity.com",
         }
-        return self.session.post("https://login.steampowered.com/jwt/finalizelogin", headers=headers, files=files)
+        return self.session.post("https://login.steampowered.com/jwt/finalizelogin", headers=headers, data=data)
 
-    def _setstokens(self, fin_resp: Response):
+    def _setstokens(self, fin_resp: Response) -> None:
         if not fin_resp.text.strip():
             raise Exception("Получен пустой ответ от finalizelogin, не удалось установить токены.")
+
         try:
             response_json = fin_resp.json()
         except json.JSONDecodeError as e:
             raise Exception(f"Ошибка декодирования JSON в _setstokens: {e}. Текст ответа: {fin_resp.text}")
+
         try:
             self.nonce_store = response_json["transfer_info"][0]["params"]["nonce"]
             self.auth_store = response_json["transfer_info"][0]["params"]["auth"]
@@ -392,14 +403,16 @@ class LoginExecutor:
             raise Exception(f"Ошибка при извлечении токенов из ответа: {e}. Текст ответа: {fin_resp.text}")
 
         store_data = {
-            'nonce': self.nonce_store,
-            'auth': self.auth_store,
-            'steamID': self.steamid
+            "nonce": self.nonce_store,
+            "auth": self.auth_store,
+            "steamID": self.steamid,
         }
         com_data = {
-            'nonce': self.nonce_com,
-            'auth': self.auth_com,
-            'steamID': self.steamid
+            "nonce": self.nonce_com,
+            "auth": self.auth_com,
+            "steamID": self.steamid,
         }
+
         self._request("POST", SteamUrl.Settoken_community_URL, data=com_data)
         self._request("POST", SteamUrl.Settoken_store_URL, data=store_data)
+

@@ -1,14 +1,13 @@
-import decimal
-from time import time
-import bs4
-import urllib.parse as urlparse
-from typing import List, Union
-
 import json
-import requests
-from steampy import guard
 import re
-# from steampy.chat import SteamChat
+import time
+import urllib.parse as urlparse
+from typing import List
+
+from curl_cffi import requests
+from bs4 import BeautifulSoup, SoupStrainer
+
+from steampy.chat import SteamChat
 from steampy.confirmation import ConfirmationExecutor
 from steampy.exceptions import SevenDaysHoldException, LoginRequired, ApiException
 from steampy.login import LoginExecutor, InvalidCredentials
@@ -16,7 +15,7 @@ from steampy.market import SteamMarket
 from steampy.models import Asset, TradeOfferState, SteamUrl, GameOptions
 from steampy.utils import text_between, texts_between, merge_items_with_descriptions_from_inventory, \
     steam_id_to_account_id, merge_items_with_descriptions_from_offers, get_description_key, \
-    merge_items_with_descriptions_from_offer, account_id_to_steam_id, get_key_value_from_url, parse_price, ping_proxy
+    merge_items_with_descriptions_from_offer, account_id_to_steam_id, get_key_value_from_url
 
 
 def login_required(func):
@@ -33,40 +32,60 @@ class SteamClient:
     def __init__(self, api_key: str, username: str = None, password: str = None, steam_guard: dict = None,
                  login_cookies: dict = None, proxies: dict = None) -> None:
         self._api_key = api_key
-        self._session = requests.Session()
+        self._session = requests.Session(impersonate="chrome120")
+
+        # ОБЯЗАТЕЛЬНО ПРИМЕНЯЕМ ПРОКСИ
         if proxies:
-            self.set_proxies(proxies)
+            self._session.proxies = proxies
+
         self.steam_guard = steam_guard
         self.was_login_executed = False
         self.username = username
         self._password = password
         self.market = SteamMarket(self._session)
-        if login_cookies:
-            self.set_login_cookies(login_cookies)
-        # self.chat = SteamChat(self._session)
+        self.chat = SteamChat(self._session)
+
+    def __getstate__(self):
+        state = self.__dict__.copy()
+        if hasattr(self, "_session") and self._session is not None:
+            state["_saved_cookies"] = self._session.cookies.get_dict()
+            state["_saved_proxies"] = getattr(self._session, "proxies", {})
+        else:
+            state["_saved_cookies"] = {}
+            state["_saved_proxies"] = {}
+        if "_session" in state:
+            del state["_session"]
+        return state
+
+    def __setstate__(self, state):
+        saved_cookies = state.pop("_saved_cookies", {})
+        saved_proxies = state.pop("_saved_proxies", {})
+        self.__dict__.update(state)
+
+        from curl_cffi import requests
+        self._session = requests.Session(impersonate="chrome120")
+
+        # Жестко прописываем куки по всем правилам RFC для HTTPS
+        for name, value in saved_cookies.items():
+            self._session.cookies.set(name, value, domain=".steamcommunity.com", path="/", secure=True)
+            self._session.cookies.set(name, value, domain=".steampowered.com", path="/", secure=True)
+
+        if saved_proxies:
+            self._session.proxies = saved_proxies
+
+        if hasattr(self, "market") and self.market is not None:
+            self.market._session = self._session
+        if hasattr(self, "chat") and self.chat is not None:
+            self.chat._session = self._session
 
     def login(self, username: str, password: str, steam_guard: dict) -> None:
         self.steam_guard = steam_guard
         self.username = username
         self._password = password
+        # print('start executor')
         LoginExecutor(username, password, self.steam_guard['shared_secret'], self._session).login()
+        # print('end executor')
         self.was_login_executed = True
-        self.market._set_login_executed(self.steam_guard, self._get_session_id())
-
-    def set_proxies(self, proxies: dict) -> dict:
-        if not isinstance(proxies, dict):
-            raise TypeError(
-                r'proxy must be a dict. Example: {"http": "http://login:password@host:port", "https": "http://login:password@host:port"}')
-        proxy_status = ping_proxy(proxies)
-        if proxy_status is True:
-            self._session.proxies.update(proxies)
-        return proxies
-
-    def set_login_cookies(self, cookies: dict) -> None:
-        self._session.cookies.update(cookies)
-        self.was_login_executed = True
-        if self.steam_guard is None:
-            self.steam_guard = {"steam_id": self.get_steam_id()}
         self.market._set_login_executed(self.steam_guard, self._get_session_id())
 
     @login_required
@@ -74,8 +93,8 @@ class SteamClient:
         url = SteamUrl.STORE_URL + '/login/logout/'
         data = {'sessionid': self._get_session_id()}
         self._session.post(url, data=data)
-        # if self.is_session_alive():
-        #    raise Exception("Logout unsuccessful")
+        if self.is_session_alive():
+            raise Exception("Logout unsuccessful")
         self.was_login_executed = False
 
     def __enter__(self):
@@ -88,59 +107,19 @@ class SteamClient:
     def __exit__(self, exc_type, exc_val, exc_tb):
         self.logout()
 
-    #    @login_required
-    #    def is_session_alive(self):
-    #        steam_login = self.username
-    #        main_page_response = self._session.get(SteamUrl.COMMUNITY_URL)
-    #        return steam_login.lower() in main_page_response.text.lower()
-
     @login_required
     def is_session_alive(self):
-        # URL страницы маркетплейса
-        url = SteamUrl.COMMUNITY_URL + '/market/'
-
-        # Получаем ответ страницы
-        response = self._session.get(url)
-
-        # Логируем статус ответа для отладки
-        print(f"Статус код ответа: {response.status_code}")
-        # print(f"Статус код ответа: {response.status_code}")
-        # print(f"Статус код ответа: {response.status_code}")
-
-        # Сохраняем страницу для дальнейшего анализа
-        with open("session_alive_page_debug.html", "w", encoding="utf-8") as f:
-            f.write(response.text)
-
-        # Парсим wallet info из JS-переменной
-        match = re.search(r'var g_rgWalletInfo = ({.*?});', response.text)
-        if not match:
-            raise ValueError("Не удалось найти переменную g_rgWalletInfo в ответе Steam Marketplace")
-
-        wallet_info = json.loads(match.group(1))
-
-        # Получаем данные о балансе
-        balance_raw = wallet_info.get("wallet_balance", 0)
-        wallet_currency = wallet_info.get("wallet_currency")
-
-        # Преобразуем баланс, если требуется
-        balance = float(balance_raw) / 100  # преобразуем в формат с плавающей точкой (если нужно)
-
-        # Логируем и возвращаем баланс
-        print(f"Баланс кошелька: {balance:.2f} ({wallet_currency})")
-        # print(f"Баланс кошелька: {balance:.2f} ({wallet_currency})")
-        # print(f"Баланс кошелька: {balance:.2f} ({wallet_currency})")
-        # print(f"Баланс кошелька: {balance:.2f} ({wallet_currency})")
-
-        # Возвращаем словарь с балансом
-        return True
+        steam_login = self.username
+        main_page_response = self._session.get(SteamUrl.COMMUNITY_URL)
+        return steam_login.lower() in main_page_response.text.lower()
 
     def api_call(self, request_method: str, interface: str, api_method: str, version: str,
                  params: dict = None) -> requests.Response:
         url = '/'.join([SteamUrl.API_URL, interface, api_method, version])
         if request_method == 'GET':
-            response = requests.get(url, params=params)
+            response = self._session.get(url, params=params)
         else:
-            response = requests.post(url, data=params)
+            response = self._session.post(url, data=params)
         if self.is_invalid_api_key(response):
             raise InvalidCredentials('Invalid API key')
         return response
@@ -151,96 +130,38 @@ class SteamClient:
         return msg in response.text
 
     @login_required
-    def get_my_inventory(self, game: GameOptions, merge: bool = True, count: int = 5000,
+    def get_my_inventory(self, game: GameOptions, merge: bool = True, count: int = 100,
                          preserve_bbcode: bool = False, raw_asset_properties: bool = False) -> dict:
         steam_id = self.steam_guard['steamid']
+
         return self.get_partner_inventory(str(steam_id), game, merge, count, preserve_bbcode, raw_asset_properties)
 
     @login_required
     def get_partner_inventory(self, partner_steam_id: str, game: GameOptions, merge: bool = True,
                               count: int = 5000, preserve_bbcode: bool = False, raw_asset_properties: bool = False) -> dict:
         url = '/'.join([SteamUrl.COMMUNITY_URL, 'inventory', partner_steam_id, game.app_id, game.context_id])
-        # Для некоторых аккаунтов параметр count вызывает HTTP 400
-        # Сначала пробуем без count, затем с count если нужно
-        params = {'l': 'english'}
+        params = {'l': 'english',
+                  'count': count}
         
         if preserve_bbcode:
             params['preserve_bbcode'] = '1'
         if raw_asset_properties:
             params['raw_asset_properties'] = '1'
 
-        # Добавляем заголовки для лучшей совместимости
-        headers = {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
-            'Accept': 'application/json, text/plain, */*',
-            'Accept-Language': 'en-US,en;q=0.9',
-            'Accept-Encoding': 'gzip, deflate, br',
-            'DNT': '1',
-            'Connection': 'keep-alive',
-            'Upgrade-Insecure-Requests': '1',
-        }
-
+        resp = self._session.get(url, params=params)
         try:
-            response = self._session.get(url, params=params, headers=headers, timeout=30)
+            response_dict = resp.json()
+        except json.JSONDecodeError as e:
+            text = (resp.text or "")[:500]
+            raise ApiException(
+                f"Steam вернул не-JSON при get_partner_inventory: status={resp.status_code}, body={text!r}, error={e}"
+            ) from e
 
-            # Логируем детали запроса для отладки
-            print(f"Inventory request URL: {response.url}")
-            print(f"Response status: {response.status_code}")
-
-            if response.status_code == 403:
-                raise ApiException('Access denied. Inventory may be private or Steam is blocking the request.')
-            elif response.status_code == 404:
-                raise ApiException('Inventory not found. User may not exist or have no items in this game.')
-            elif response.status_code == 429:
-                raise ApiException('Rate limited by Steam. Please wait before making more requests.')
-            elif response.status_code != 200:
-                raise ApiException(f'HTTP error: {response.status_code} - {response.reason}')
-
-            # Проверяем, что ответ не пустой
-            if not response.content:
-                raise ApiException('Empty response from Steam')
-
-            try:
-                response_dict = response.json()
-            except ValueError as e:
-                # Сохраняем ответ для отладки
-                with open("inventory_error_response.html", "w", encoding="utf-8") as f:
-                    f.write(response.text)
-                raise ApiException(f'Invalid JSON response from Steam: {str(e)}')
-
-            # Проверяем, что response_dict не None и содержит ключ success
-            if not response_dict:
-                raise ApiException('Invalid response format from Steam API: empty response')
-
-            # Проверяем поле success - оно должно быть равно 1
-            if 'success' not in response_dict:
-                raise ApiException('Invalid response format from Steam API: missing success field')
-            
-            if response_dict['success'] != 1:
-                error_msg = response_dict.get('Error', response_dict.get('error', 'Unknown error'))
-                raise ApiException(f'Steam API error: {error_msg}')
-
-            # Проверяем наличие assets (предметов в инвентаре)
-            if 'assets' not in response_dict or not response_dict['assets']:
-                # Возвращаем полный ответ от Steam API, даже если инвентарь пустой
-                # Это важно для совместимости с сервером, который проверяет success=1
-                print("No assets found in inventory response")
-                if merge:
-                    # Если merge=True, возвращаем пустой словарь с описаниями
-                    return merge_items_with_descriptions_from_inventory(response_dict, game)
-                # Если merge=False, возвращаем полный ответ от Steam API
-                return response_dict
-
-            print(f"Found {len(response_dict['assets'])} items in inventory")
-
-            if merge:
-                return merge_items_with_descriptions_from_inventory(response_dict, game)
-            return response_dict
-
-        except ApiException:
-            raise
-        except Exception as e:
-            raise ApiException(f'Failed to get inventory: {str(e)}')
+        if response_dict['success'] != 1:
+            raise ApiException('Success value should be 1.')
+        if merge:
+            return merge_items_with_descriptions_from_inventory(response_dict, game)
+        return response_dict
 
     def _get_session_id(self) -> str:
         return self._session.cookies.get_dict()['sessionid']
@@ -455,19 +376,40 @@ class SteamClient:
         return SteamUrl.COMMUNITY_URL + '/tradeoffer/' + trade_offer_id
 
     @login_required
-    def get_wallet_balance(self, convert_to_decimal: bool = True) -> dict:
+    def get_wallet_balance(self, convert_to_decimal: bool = True, timeout: int = 15) -> dict:
         url = SteamUrl.COMMUNITY_URL + '/market/'
-        response = self._session.get(url)
-        print(response.status_code)
-        with open("wallet_page_debug.html", "w", encoding="utf-8") as f:
-            f.write(response.text)
+        max_retries = 5
+        wallet_info = None
+        last_status = None
+        last_text = ""
+        
+        for attempt in range(max_retries):
+            response = self._session.get(url, timeout=timeout)
+            last_status = response.status_code
+            last_text = response.text
+            
+            only_scripts = SoupStrainer('script', type='text/javascript')
+            soup = BeautifulSoup(response.content, 'lxml', parse_only=only_scripts)
+            scripts = soup.find_all('script', type='text/javascript')
+            
+            for script in scripts:
+                if script.string and 'g_rgWalletInfo' in script.string:
+                    pattern = r'var\s+g_rgWalletInfo\s*=\s*(\{.*?\});'
+                    match = re.search(pattern, script.string, re.DOTALL)
+                    if match:
+                        wallet_info = json.loads(match.group(1))
+                        break
+            
+            if wallet_info:
+                break
+            
+            if attempt < max_retries - 1:
+                time.sleep(2 ** attempt)
+        
+        if not wallet_info:
+            debug_text = last_text[:300].replace('\n', ' ')
+            raise ValueError(f"g_rgWalletInfo не найден. HTTP {last_status}, Ответ: {debug_text}")
 
-        # Парсим wallet info из JS-переменной
-        match = re.search(r'var g_rgWalletInfo = ({.*?});', response.text)
-        if not match:
-            raise ValueError("Не удалось найти переменную g_rgWalletInfo в ответе Steam Marketplace")
-
-        wallet_info = json.loads(match.group(1))
         balance_raw = wallet_info.get("wallet_balance", 0)
         wallet_currency = wallet_info.get("wallet_currency")
 
@@ -477,5 +419,5 @@ class SteamClient:
             "balance": balance,
             "wallet_currency": wallet_currency,
             "delayed_balance": float(wallet_info.get("wallet_delayed_balance", 0)) / 100
-
         }
+

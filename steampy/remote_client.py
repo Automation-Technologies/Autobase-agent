@@ -15,7 +15,7 @@ from typing import Any, Optional, Dict
 
 import redis
 
-from steampy.models import GameOptions
+from steampy.models import GameOptions, Currency
 
 logger = logging.getLogger(__name__)
 
@@ -38,6 +38,125 @@ class DecimalEncoder(json.JSONEncoder):
         return super(DecimalEncoder, self).default(obj)
 
 
+class RemoteMarket:
+    """
+    Эмуляция объекта market для RemoteSteamClient
+    Позволяет вызывать методы как client.market.fetch_price()
+    """
+    
+    def __init__(self, remote_client: 'RemoteSteamClient'):
+        self._client = remote_client
+    
+    def fetch_price(self, item_hash_name: str, game: GameOptions, currency: Currency) -> dict:
+        """
+        Получить цену предмета
+        
+        Args:
+            item_hash_name: Hash название предмета
+            game: Опции игры
+            currency: Валюта
+            
+        Returns:
+            Словарь с информацией о цене
+        """
+        return self._client._send_command_and_wait(
+            "market_fetch_price",
+            item_hash_name=item_hash_name,
+            app_id=game.app_id,
+            currency=currency.value
+        )
+    
+    def create_sell_order(self, assetid: str, game: GameOptions, money_to_receive: str) -> dict:
+        """
+        Создать ордер на продажу
+        
+        Args:
+            assetid: ID предмета
+            game: Опции игры
+            money_to_receive: Сумма к получению
+            
+        Returns:
+            Результат создания ордера
+        """
+        return self._client._send_command_and_wait(
+            "market_create_sell_order",
+            assetid=assetid,
+            app_id=game.app_id,
+            context_id=game.context_id,
+            money_to_receive=money_to_receive
+        )
+    
+    def cancel_sell_order(self, sell_listing_id: str) -> None:
+        """
+        Отменить ордер на продажу
+        
+        Args:
+            sell_listing_id: ID листинга на продажу
+        """
+        self._client._send_command_and_wait("market_cancel_sell_order", sell_listing_id=sell_listing_id)
+    
+    def cancel_buy_order(self, buy_order_id: str) -> dict:
+        """
+        Отменить ордер на покупку
+        
+        Args:
+            buy_order_id: ID ордера на покупку
+            
+        Returns:
+            Результат отмены
+        """
+        return self._client._send_command_and_wait("market_cancel_buy_order", buy_order_id=buy_order_id)
+    
+    def get_my_buy_orders(self) -> dict:
+        """
+        Получить мои ордера на покупку
+        
+        Returns:
+            Словарь с ордерами на покупку
+        """
+        return self._client._send_command_and_wait("market_get_my_buy_orders")
+    
+    def get_my_sell_listings(self) -> dict:
+        """
+        Получить мои листинги на продажу
+        
+        Returns:
+            Словарь с листингами
+        """
+        return self._client._send_command_and_wait("market_get_my_sell_listings")
+    
+    def get_my_recent_sell_listings(self) -> dict:
+        """
+        Получить последние 10 листингов на продажу
+        
+        Returns:
+            Словарь с листингами
+        """
+        return self._client._send_command_and_wait("market_get_my_recent_sell_listings")
+    
+    def get_my_market_listings(self) -> dict:
+        """
+        Получить все мои листинги на маркете (buy + sell)
+        
+        Returns:
+            Словарь со всеми листингами
+        """
+        return self._client._send_command_and_wait("market_get_my_market_listings")
+    
+    def get_market_history(self, start: int = 0, count: int = 100) -> dict:
+        """
+        Получить историю покупок/продаж на Steam Market
+        
+        Args:
+            start: Начальная позиция (по умолчанию 0)
+            count: Количество записей для получения (по умолчанию 100)
+        
+        Returns:
+            Словарь с сырыми данными истории от Steam API
+        """
+        return self._client._send_command_and_wait("market_get_history", start=start, count=count)
+
+
 class RedisManager:
     """
     Профессиональный менеджер соединений Redis.
@@ -52,7 +171,7 @@ class RedisManager:
     _lock = threading.Lock()
 
     @classmethod
-    def get_pool(cls, host: str, port: int, db: int) -> redis.ConnectionPool:
+    def get_pool(cls, host: str, port: int, db: int, socket_timeout: int = 120) -> redis.ConnectionPool:
         """
         Возвращает пул соединений для текущего процесса.
         Если пула нет или сменился PID (после fork) — создает новый.
@@ -61,6 +180,7 @@ class RedisManager:
             host: Хост Redis сервера
             port: Порт Redis сервера
             db: Номер базы данных Redis
+            socket_timeout: Таймаут сокета в секундах (по умолчанию 120 для поддержки длительных blpop)
             
         Returns:
             ConnectionPool для текущего процесса
@@ -74,7 +194,7 @@ class RedisManager:
         with cls._lock:
             # Двойная проверка внутри блокировки (Thread-safe Singleton)
             if current_pid not in cls._instances:
-                logger.debug(f"🔧 [PID={current_pid}] Инициализация нового Redis ConnectionPool")
+                logger.debug(f"🔧 [PID={current_pid}] Инициализация нового Redis ConnectionPool (socket_timeout={socket_timeout}s)")
                 
                 # Очистка старых пулов от родительских процессов
                 # (в дочернем процессе словарь скопирован, но старые пулы невалидны)
@@ -88,7 +208,7 @@ class RedisManager:
                     port=port,
                     db=db,
                     decode_responses=True,
-                    socket_timeout=5,
+                    socket_timeout=socket_timeout,
                     socket_connect_timeout=5,
                     max_connections=10
                 )
@@ -127,10 +247,13 @@ class RemoteSteamClient:
         """
         self.agent_token = agent_token
         self.login = login
+        self.username = login  # Для совместимости с интерфейсом SteamClient
         self.command_timeout = command_timeout
         
         # Получаем пул через RedisManager (профессиональный паттерн Singleton с PID-awareness)
-        pool = RedisManager.get_pool(redis_host, redis_port, redis_db)
+        # Устанавливаем socket_timeout больше command_timeout + запас для блокирующих операций blpop
+        socket_timeout = max(command_timeout + 10, 120)
+        pool = RedisManager.get_pool(redis_host, redis_port, redis_db, socket_timeout=socket_timeout)
         
         # Создаем легковесный клиент, используя готовый пул соединений
         # Redis клиент сам по себе легковесный, тяжелый только ConnectionPool
@@ -138,6 +261,10 @@ class RemoteSteamClient:
         
         # Эмуляция атрибутов оригинального SteamClient
         self.was_login_executed = True  # В Trustless режиме логин делает сам агент
+        self.market = RemoteMarket(self)  # Эмуляция объекта market
+        # steam_guard нужен для совместимости с InventoryDataScrapper
+        # В Trustless режиме steamid получается через агента при первом запросе
+        self.steam_guard = None  # Будет установлен при первом использовании через агента
     
     def _send_command_and_wait(self, action: str, **kwargs) -> Any:
         """
@@ -220,110 +347,79 @@ class RemoteSteamClient:
             True если агент онлайн и сессия активна
         """
         return self._send_command_and_wait("is_session_alive")
-
-    # ===== Совместимость с SteamClient =====
-
+    
+    # ===== Совместимость с интерфейсом SteamClient =====
+    
     def _get_session_id(self) -> str:
         """
         Получить текущий sessionid из сессии Steam на агенте.
-
-        Используется ординатором и другими компонентами, которые ожидают,
-        что у клиента есть приватный метод `_get_session_id`, как у обычного SteamClient.
+        
+        Нужен для модулей вроде Ординатора, которые ожидают у клиента приватный
+        метод `_get_session_id`, как у обычного SteamClient.
         """
         result = self._send_command_and_wait("get_session_id")
         if not isinstance(result, str):
             raise RemoteSteamClientException(f"Invalid session_id from agent: {result!r}")
         return result
     
-    def get_trade_offers(self, merge: bool = True) -> dict:
-        """
-        Получить список трейд офферов
-        
-        Args:
-            merge: Объединять ли предметы с описаниями
-            
-        Returns:
-            Словарь с трейд офферами
-        """
-        return self._send_command_and_wait("get_trade_offers", merge=merge)
-    
-    def get_trade_offer(self, trade_offer_id: str, merge: bool = True) -> dict:
-        """
-        Получить информацию о конкретном трейд оффере
-        
-        Args:
-            trade_offer_id: ID трейд оффера
-            merge: Объединять ли предметы с описаниями
-            
-        Returns:
-            Словарь с информацией о трейд оффере
-        """
-        return self._send_command_and_wait("get_trade_offer", trade_offer_id=trade_offer_id, merge=merge)
-    
-    def accept_trade_offer(self, trade_offer_id: str) -> dict:
-        """
-        Принять трейд оффер
-        
-        Args:
-            trade_offer_id: ID трейд оффера
-            
-        Returns:
-            Результат принятия оффера
-        """
-        return self._send_command_and_wait("accept_trade_offer", trade_offer_id=trade_offer_id)
-    
-    def decline_trade_offer(self, trade_offer_id: str) -> dict:
-        """
-        Отклонить трейд оффер
-        
-        Args:
-            trade_offer_id: ID трейд оффера
-            
-        Returns:
-            Результат отклонения оффера
-        """
-        return self._send_command_and_wait("decline_trade_offer", trade_offer_id=trade_offer_id)
-    
-    def cancel_trade_offer(self, trade_offer_id: str) -> dict:
-        """
-        Отменить отправленный трейд оффер
-        
-        Args:
-            trade_offer_id: ID трейд оффера
-            
-        Returns:
-            Результат отмены оффера
-        """
-        return self._send_command_and_wait("cancel_trade_offer", trade_offer_id=trade_offer_id)
-    
-    def make_offer(
+    def make_offer_with_url(
         self,
         items_from_me: list,
         items_from_them: list,
-        partner_steam_id: str,
-        message: str
+        trade_offer_url: str,
+        message: str = ""
     ) -> dict:
         """
-        Создать трейд оффер
+        Создать трейд оффер по URL
         
         Args:
-            items_from_me: Список предметов от меня
-            items_from_them: Список предметов от партнера
-            partner_steam_id: Steam ID партнера
+            items_from_me: Список предметов от меня (список Asset или словарей)
+            items_from_them: Список предметов от партнера (список Asset или словарей)
+            trade_offer_url: URL трейд оффера
             message: Сообщение к офферу
             
         Returns:
             Результат создания оффера
         """
+        # Преобразуем Asset объекты в словари, если нужно
+        items_from_me_dict = []
+        for item in items_from_me:
+            if hasattr(item, 'to_dict'):
+                items_from_me_dict.append(item.to_dict())
+            elif isinstance(item, dict):
+                items_from_me_dict.append(item)
+            else:
+                items_from_me_dict.append({
+                    'assetid': str(item.assetid) if hasattr(item, 'assetid') else str(item),
+                    'appid': item.game.app_id if hasattr(item, 'game') else None,
+                    'contextid': item.game.context_id if hasattr(item, 'game') else None,
+                    'amount': item.amount if hasattr(item, 'amount') else 1
+                })
+        
+        items_from_them_dict = []
+        for item in items_from_them:
+            if hasattr(item, 'to_dict'):
+                items_from_them_dict.append(item.to_dict())
+            elif isinstance(item, dict):
+                items_from_them_dict.append(item)
+            else:
+                items_from_them_dict.append({
+                    'assetid': str(item.assetid) if hasattr(item, 'assetid') else str(item),
+                    'appid': item.game.app_id if hasattr(item, 'game') else None,
+                    'contextid': item.game.context_id if hasattr(item, 'game') else None,
+                    'amount': item.amount if hasattr(item, 'amount') else 1
+                })
+        
         return self._send_command_and_wait(
-            "make_offer",
-            items_from_me=items_from_me,
-            items_from_them=items_from_them,
-            partner_steam_id=partner_steam_id,
+            "make_offer_with_url",
+            items_from_me=items_from_me_dict,
+            items_from_them=items_from_them_dict,
+            trade_offer_url=trade_offer_url,
             message=message
         )
     
-    def get_my_inventory(self, game: GameOptions, merge: bool = True, count: int = 100) -> dict:
+    def get_my_inventory(self, game: GameOptions, merge: bool = True, count: int = 5000,
+                         preserve_bbcode: bool = False, raw_asset_properties: bool = False) -> dict:
         """
         Получить мой инвентарь
         
@@ -331,6 +427,8 @@ class RemoteSteamClient:
             game: Опции игры (app_id, context_id)
             merge: Объединять ли предметы с описаниями
             count: Количество предметов для загрузки
+            preserve_bbcode: Сохранять ли BBCode в описаниях
+            raw_asset_properties: Получать ли сырые свойства ассетов
             
         Returns:
             Словарь с инвентарем
@@ -340,7 +438,9 @@ class RemoteSteamClient:
             app_id=game.app_id,
             context_id=game.context_id,
             merge=merge,
-            count=count
+            count=count,
+            preserve_bbcode=preserve_bbcode,
+            raw_asset_properties=raw_asset_properties
         )
     
     def get_partner_inventory(
@@ -371,17 +471,26 @@ class RemoteSteamClient:
             count=count
         )
     
-    def get_wallet_balance(self) -> str:
+    def get_wallet_balance(self, convert_to_decimal: bool = True, timeout: int = 15) -> dict:
         """
         Получить баланс кошелька Steam
         
+        Args:
+            convert_to_decimal: Конвертировать баланс в десятичное число (делить на 100)
+            timeout: Таймаут запроса (не используется в RemoteSteamClient, оставлен для совместимости)
+        
         Returns:
-            Строка с балансом (например "$5.00" или "5,00 pуб.")
+            Словарь с балансом:
+            {
+                "balance": float - баланс кошелька,
+                "wallet_currency": int - валюта кошелька,
+                "delayed_balance": float - отложенный баланс
+            }
         """
-        return self._send_command_and_wait("get_wallet_balance")
-    
-    # ===== Market методы =====
-    
+        return self._send_command_and_wait("get_wallet_balance", convert_to_decimal=convert_to_decimal)
+
+    # ===== Market методы (1-в-1 с агентом) =====
+
     def market_create_buy_order(
         self,
         market_name: str,
@@ -395,10 +504,10 @@ class RemoteSteamClient:
         
         Args:
             market_name: Название предмета
-            price_single_item: Цена за единицу
+            price_single_item: Цена за единицу (в минимальных единицах валюты, например, центы)
             quantity: Количество
             game: Опции игры
-            currency: Валюта
+            currency: Валюта (целое значение Enum Currency)
             
         Returns:
             Результат создания ордера
@@ -411,7 +520,7 @@ class RemoteSteamClient:
             app_id=game.app_id,
             currency=currency
         )
-    
+
     def market_cancel_buy_order(self, buy_order_id: str) -> dict:
         """
         Отменить ордер на покупку
@@ -423,7 +532,7 @@ class RemoteSteamClient:
             Результат отмены
         """
         return self._send_command_and_wait("market_cancel_buy_order", buy_order_id=buy_order_id)
-    
+
     def market_create_sell_order(
         self,
         assetid: str,
@@ -448,7 +557,7 @@ class RemoteSteamClient:
             context_id=game.context_id,
             money_to_receive=money_to_receive
         )
-    
+
     def market_cancel_sell_order(self, sell_listing_id: str) -> None:
         """
         Отменить ордер на продажу
@@ -457,7 +566,7 @@ class RemoteSteamClient:
             sell_listing_id: ID листинга на продажу
         """
         self._send_command_and_wait("market_cancel_sell_order", sell_listing_id=sell_listing_id)
-    
+
     def market_get_my_buy_orders(self) -> dict:
         """
         Получить мои ордера на покупку
@@ -466,7 +575,7 @@ class RemoteSteamClient:
             Словарь с ордерами на покупку
         """
         return self._send_command_and_wait("market_get_my_buy_orders")
-    
+
     def market_get_my_sell_listings(self) -> dict:
         """
         Получить мои листинги на продажу
@@ -475,7 +584,7 @@ class RemoteSteamClient:
             Словарь с листингами
         """
         return self._send_command_and_wait("market_get_my_sell_listings")
-    
+
     def market_get_my_market_listings(self) -> dict:
         """
         Получить все мои листинги на маркете
@@ -484,7 +593,7 @@ class RemoteSteamClient:
             Словарь со всеми листингами
         """
         return self._send_command_and_wait("market_get_my_market_listings")
-    
+
     def market_fetch_price(
         self,
         item_hash_name: str,
@@ -508,7 +617,7 @@ class RemoteSteamClient:
             app_id=game.app_id,
             currency=currency
         )
-    
+
     def market_fetch_price_history(
         self,
         item_hash_name: str,

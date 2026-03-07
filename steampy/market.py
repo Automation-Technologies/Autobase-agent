@@ -4,7 +4,7 @@ import time
 import urllib.parse
 from decimal import Decimal
 
-from requests import Session
+from curl_cffi.requests import Session
 
 from steampy.confirmation import ConfirmationExecutor
 from steampy.exceptions import ApiException, TooManyRequests, LoginRequired
@@ -29,6 +29,16 @@ class SteamMarket:
         self._steam_guard = None
         self._session_id = None
         self.was_login_executed = False
+
+    def __getstate__(self):
+        state = self.__dict__.copy()
+        if "_session" in state:
+            del state["_session"]
+        return state
+
+    def __setstate__(self, state):
+        self.__dict__.update(state)
+        self._session = None
 
     def _set_login_executed(self, steamguard: dict, session_id: str):
         self._steam_guard = steamguard
@@ -252,6 +262,7 @@ class SteamMarket:
                             if response.status_code != 200:
                                 last_error = f"HTTP code: {response.status_code} (pagination endpoint, offset {i})"
                                 if attempt < max_retries - 1:
+                                    # даём внешнему циклу attempt отработать ретрай
                                     break
                                 else:
                                     raise ApiException(f"There was a problem getting sell listings. {last_error}")
@@ -267,7 +278,8 @@ class SteamMarket:
                                 **listings["sell_listings"],
                                 **listings_2["sell_listings"],
                             }
-
+                            
+                            # обязательная пауза между запросами к Steam
                             time.sleep(5.4)
 
                 time.sleep(5.4)
@@ -313,34 +325,6 @@ class SteamMarket:
             'buy_orders': buy_orders,
             'sell_listings': sell_listings
         }
-    
-    @login_required
-    def get_market_history(self, start: int = 0, count: int = 100) -> dict:
-        """
-        Получить историю покупок/продаж на Steam Market
-        
-        Args:
-            start: Начальная позиция (по умолчанию 0)
-            count: Количество записей для получения (по умолчанию 100)
-        
-        Returns:
-            Словарь с сырыми данными истории от Steam API
-        """
-        url = '/'.join([SteamUrl.COMMUNITY_URL, 'market', 'myhistory', 'render'])
-        params = {
-            'query': '',
-            'start': start,
-            'count': count
-        }
-        
-        response = self._session.get(url, params=params, timeout=60)
-        response.encoding = 'utf-8-sig'
-        response_dict = response.json()
-        
-        if not response_dict.get('success'):
-            raise ApiException('Success value should be true.')
-        
-        return response_dict
 
     @login_required
     def create_sell_order(self, assetid: str, game: GameOptions, money_to_receive: str) -> dict:
@@ -353,7 +337,14 @@ class SteamMarket:
             "price": money_to_receive
         }
         headers = {'Referer': "%s/profiles/%s/inventory" % (SteamUrl.COMMUNITY_URL, self._steam_guard['steamid'])}
-        response = self._session.post(SteamUrl.COMMUNITY_URL + "/market/sellitem/", data, headers=headers).json()
+        response = self._session.post(SteamUrl.COMMUNITY_URL + "/market/sellitem/", data=data, headers=headers)
+        try:
+            response = response.json()
+        except json.JSONDecodeError as e:
+            text = (response.text or "")[:500]
+            raise ApiException(
+                f"Steam вернул не-JSON при create_sell_order: status={response.status_code}, body={text!r}, error={e}"
+            ) from e
         if response.get("needs_mobile_confirmation"):
             return self._confirm_sell_listing(assetid)
         return response
@@ -377,7 +368,7 @@ class SteamMarket:
 
         response = self._session.post(
             SteamUrl.COMMUNITY_URL + "/market/createbuyorder/",
-            data,
+            data=data,
             headers=headers
         ).json()
 
@@ -407,7 +398,7 @@ class SteamMarket:
             time.sleep(1)
             response = self._session.post(
                 SteamUrl.COMMUNITY_URL + "/market/createbuyorder/",
-                data,
+                data=data,
                 headers=headers
             ).json()
 
@@ -432,7 +423,7 @@ class SteamMarket:
         }
         headers = {'Referer': "%s/market/listings/%s/%s" % (SteamUrl.COMMUNITY_URL, game.app_id,
                                                             urllib.parse.quote(market_name))}
-        response = self._session.post(SteamUrl.COMMUNITY_URL + "/market/buylisting/" + market_id, data,
+        response = self._session.post(SteamUrl.COMMUNITY_URL + "/market/buylisting/" + market_id, data=data,
                                       headers=headers).json()
         try:
             if response["wallet_info"]["success"] != 1:
@@ -459,7 +450,7 @@ class SteamMarket:
             "buy_orderid": buy_order_id
         }
         headers = {"Referer": SteamUrl.COMMUNITY_URL + "/market"}
-        response = self._session.post(SteamUrl.COMMUNITY_URL + "/market/cancelbuyorder/", data, headers=headers).json()
+        response = self._session.post(SteamUrl.COMMUNITY_URL + "/market/cancelbuyorder/", data=data, headers=headers).json()
         if response.get("success") != 1:
             raise ApiException("There was a problem canceling the order. success: %s" % response.get("success"))
         return response
