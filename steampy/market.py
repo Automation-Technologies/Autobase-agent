@@ -455,6 +455,18 @@ class SteamMarket:
             raise ApiException("There was a problem canceling the order. success: %s" % response.get("success"))
         return response
 
+    @login_required
+    def get_market_history(self, start: int, count: int) -> dict:
+        """Сырой ответ Steam API: история покупок/продаж на маркете (results_html, hovers, assets, total_count, success)."""
+        url = SteamUrl.COMMUNITY_URL + "/market/myhistory/render"
+        params = {"query": "", "start": start, "count": count}
+        response = self._session.get(url, params=params, timeout=60)
+        response.encoding = "utf-8-sig"
+        response_dict = response.json()
+        if not response_dict.get("success"):
+            raise ApiException("Market history request returned success=false.")
+        return response_dict
+
     def _confirm_sell_listing(self, asset_id: str) -> dict:
         con_executor = ConfirmationExecutor(self._steam_guard['identity_secret'], self._steam_guard['steamid'],
                                             self._session)
