@@ -113,6 +113,8 @@ class CommandExecutor:
                 result = await self._market_get_my_market_listings(steam_client)
             elif cmd_type == "market_get_history":
                 result = await self._market_get_history(steam_client, args)
+            elif cmd_type == "market_fetch_price_history":
+                result = await self._market_fetch_price_history(steam_client, args)
             elif cmd_type == "get_session_id":
                 result = await self._get_session_id(steam_client)
             else:
@@ -752,6 +754,32 @@ class CommandExecutor:
                 "status": "error",
                 "message": str(e)
             }
+
+    async def _market_fetch_price_history(self, client: SteamClient, args: Dict[str, Any]) -> Dict[str, Any]:
+        """Получить историю цен предмета (market/pricehistory)."""
+        item_hash_name = args.get("item_hash_name")
+        app_id = args.get("app_id")
+
+        if not item_hash_name or not app_id:
+            return {"status": "error", "message": "Не указаны item_hash_name или app_id"}
+
+        try:
+            game = _GameOptionsResolver.resolve(app_id)
+        except ValueError as e:
+            return {"status": "error", "message": str(e)}
+
+        loop = asyncio.get_event_loop()
+        try:
+            result = await loop.run_in_executor(
+                None,
+                client.market.fetch_price_history,
+                item_hash_name,
+                game
+            )
+            return {"status": "success", "result": result}
+        except Exception as e:
+            self.logger.error(f"Ошибка получения истории цен: {e}", exc_info=True)
+            return {"status": "error", "message": str(e)}
 
     async def _get_session_id(self, client: SteamClient) -> Dict[str, Any]:
         """Вернуть sessionid, как это делает SteamClient._get_session_id()."""
