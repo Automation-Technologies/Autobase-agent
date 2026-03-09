@@ -27,3 +27,4 @@ dist/
 security.salt
 .github
 maFiles
+python_portable
