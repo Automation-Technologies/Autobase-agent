@@ -3,11 +3,13 @@
 Координирует работу всех компонентов.
 """
 import asyncio
+import json
 import logging
 from pathlib import Path
 from typing import Dict, Any, List
 
 import aiohttp
+from cryptography.fernet import Fernet
 
 from core.account_manager import AccountManager
 from core.command_executor import CommandExecutor
@@ -29,15 +31,21 @@ class Agent:
             config_path: str,
             proxies_path: str,
             mafiles_dir: str,
-            accounts_path: str
+            fernet_key: bytes,
+            mafiles_dict: Dict[str, dict],
+            accounts_storage_path: Path,
     ):
+        self._fernet = Fernet(fernet_key)
+        self._mafiles_dir = Path(mafiles_dir)
+        self._mafiles_dict = mafiles_dict
+
         self.config_manager = ConfigManager(config_path)
         self.proxy_manager = ProxyManager(proxies_path)
-        self.mafile_scanner = MaFileScanner(mafiles_dir)
-        self.account_manager = AccountManager(accounts_path)
+        self.mafile_scanner = MaFileScanner(mafiles_dict)
+        self.account_manager = AccountManager(fernet_key, accounts_storage_path)
 
         self.command_executor = CommandExecutor(
-            mafiles_dir,
+            mafiles_dict,
             self.proxy_manager,
             self.account_manager
         )
@@ -179,9 +187,6 @@ class Agent:
 
             client = None
             try:
-                import json
-                from pathlib import Path
-
                 password = self.account_manager.get_password(login)
                 if password is None:
                     self._log(f"❌ В maFiles/accounts.json нет пароля для {login}, пропускаем аккаунт")
@@ -192,9 +197,7 @@ class Agent:
                     self._log(f"❌ В maFiles/accounts.json нет API key для {login}, пропускаем аккаунт")
                     continue
 
-                mafile_path = acc["filepath"]
-                with open(Path(mafile_path), "r", encoding="utf-8") as f:
-                    ma_data = json.load(f)
+                ma_data = acc["mafile_data"]
 
                 steamid = ma_data.get("Session", {}).get("SteamID")
                 shared_secret = ma_data.get("shared_secret")
@@ -320,23 +323,49 @@ class Agent:
         self._log("✅ Конфигурация сохранена")
 
     def save_account_credentials(self, login: str, password: str, mafile_path: str, api_key: str) -> None:
-        """Сохранить данные аккаунта (пароль, путь к maFile и API key)."""
-        self.account_manager.set_account(login, password, mafile_path, api_key)
+        """
+        Сохранить данные аккаунта.
+        Читает maFile с диска, добавляет в in-memory словарь,
+        шифрует и сохраняет как .enc — plaintext на диске не остаётся.
+        """
+        source = Path(mafile_path)
+        try:
+            with open(source, "r", encoding="utf-8") as f:
+                ma_data = json.load(f)
+        except Exception as e:
+            self._log(f"❌ Не удалось прочитать maFile {mafile_path}: {e}")
+            return
+
+        login_lower = login.lower()
+        self._mafiles_dict[login_lower] = ma_data
+
+        enc_path = self._mafiles_dir / (source.name + ".enc")
+        json_bytes = json.dumps(ma_data, ensure_ascii=False, indent=2).encode("utf-8")
+        enc_path.write_bytes(self._fernet.encrypt(json_bytes))
+
+        # Удаляем plaintext если он лежит внутри mafiles_dir
+        if source.parent.resolve() == self._mafiles_dir.resolve() and source.exists():
+            source.unlink()
+
+        self.account_manager.set_account(login_lower, password, api_key)
         self._log(f"✅ Данные аккаунта сохранены для {login}")
 
     def delete_account(self, login: str) -> None:
-        """Полностью удалить аккаунт: maFile, прокси и запись в maFiles/accounts.json."""
-        mafile_path: str = self.account_manager.get_mafile_path(login)
-        if mafile_path is None:
-            path_obj_from_scanner: Path = self.mafile_scanner.get_mafile_path_by_login(login)
-            if path_obj_from_scanner is not None:
-                if path_obj_from_scanner.exists() and path_obj_from_scanner.is_file():
-                    path_obj_from_scanner.unlink()
-        else:
-            path_obj: Path = Path(mafile_path)
-            if path_obj.exists() and path_obj.is_file():
-                path_obj.unlink()
+        """Полностью удалить аккаунт: .enc файл с диска, из памяти, прокси и запись в accounts.json.enc."""
+        login_lower = login.lower()
 
+        # Удаляем .enc файл с диска (ищем по совпадению account_name внутри)
+        for enc_file in self._mafiles_dir.glob("*.maFile.enc"):
+            try:
+                decrypted = self._fernet.decrypt(enc_file.read_bytes())
+                data = json.loads(decrypted.decode("utf-8"))
+                if data.get("account_name", "").lower() == login_lower:
+                    enc_file.unlink()
+                    break
+            except Exception:
+                continue
+
+        self._mafiles_dict.pop(login_lower, None)
         self.proxy_manager.remove_proxy_for_login(login)
         self.account_manager.remove_account(login)
         self._log(f"🗑️ Аккаунт {login} и все его данные удалены")

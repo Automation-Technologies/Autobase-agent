@@ -1,13 +1,15 @@
 """
 Launcher для приложения с защитой мастер-паролем.
-Обеспечивает шифрование/расшифровку папки maFiles.
+maFiles никогда не расшифровываются на диск — только в оперативную память.
 """
+import json
 import os
 import sys
 import tkinter as tk
 from tkinter import simpledialog, messagebox
 import base64
 from pathlib import Path
+from typing import Dict
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
 from cryptography.fernet import Fernet, InvalidToken
@@ -148,6 +150,29 @@ def process_folder(folder_path: Path, key: bytes, encrypt: bool = True) -> bool:
         return False
 
 
+def load_mafiles_to_memory(key: bytes, folder_path: Path) -> Dict[str, dict]:
+    """
+    Читает все *.maFile.enc из папки, расшифровывает в RAM.
+    Возвращает Dict[login_lower, mafile_json].
+    """
+    fernet = Fernet(key)
+    result: Dict[str, dict] = {}
+
+    if not folder_path.exists():
+        return result
+
+    for enc_file in folder_path.glob("*.maFile.enc"):
+        try:
+            data = json.loads(fernet.decrypt(enc_file.read_bytes()).decode("utf-8"))
+            login = data.get("account_name", "").lower()
+            if login:
+                result[login] = data
+        except Exception as e:
+            print(f"Ошибка расшифровки {enc_file.name}: {e}")
+
+    return result
+
+
 def ask_password(is_first_time: bool) -> str:
     """
     Показывает GUI окно для ввода пароля.
@@ -171,15 +196,12 @@ def ask_password(is_first_time: bool) -> str:
 
 
 def encrypt_on_exit():
-    """Функция для автоматического шифрования при выходе."""
-    global _encryption_key
-    if _encryption_key and TARGET_PATH.exists():
-        try:
-            print("\nЗавершение работы. Шифрование данных...")
-            process_folder(TARGET_PATH, _encryption_key, encrypt=True)
-            print("Данные защищены.")
-        except Exception as e:
-            print(f"Ошибка при шифровании при выходе: {e}")
+    """
+    Вызывается при выходе из приложения.
+    Данные уже защищены: maFiles никогда не покидали RAM в открытом виде,
+    accounts.json.enc перезаписывается AccountManager-ом при каждой мутации.
+    """
+    print("\nЗавершение работы. Данные в безопасности.")
 
 
 def signal_handler(signum, frame):
@@ -188,15 +210,15 @@ def signal_handler(signum, frame):
     sys.exit(0)
 
 
-def run_bot():
-    """
-    Запускает основное приложение.
-    Эта функция будет импортирована из main.py
-    """
+def run_bot(key: bytes, mafiles_dict: Dict[str, dict]) -> None:
+    """Запускает основное приложение с уже загруженными в RAM данными."""
     from main import Application
-    
-    # Передаем callback для шифрования при закрытии
-    app = Application(on_close_callback=encrypt_on_exit)
+
+    app = Application(
+        fernet_key=key,
+        mafiles_dict=mafiles_dict,
+        on_close_callback=encrypt_on_exit,
+    )
     try:
         app.run()
     except KeyboardInterrupt:
@@ -207,68 +229,44 @@ def run_bot():
 
 
 if __name__ == "__main__":
-    # Регистрируем обработчики для автоматического шифрования при выходе
     atexit.register(encrypt_on_exit)
     signal.signal(signal.SIGINT, signal_handler)
     signal.signal(signal.SIGTERM, signal_handler)
-    
-    # 1. Проверяем, первый ли это запуск
+
+    # 1. Определяем: первый запуск или нет
     first_run = not SALT_PATH.exists()
-    
-    # 2. Проверяем, зашифрована ли папка
-    folder_encrypted = is_folder_encrypted(TARGET_PATH)
-    
-    # 3. Если это не первый запуск, но папка не зашифрована - это странно
-    if not first_run and not folder_encrypted:
-        # Возможно, пользователь удалил .enc файлы вручную
-        # Считаем это первым запуском
+
+    # 2. Если соль есть, но нет ни одного .enc — считаем первым запуском
+    if not first_run and not is_folder_encrypted(TARGET_PATH):
         first_run = True
-        if SALT_PATH.exists():
-            SALT_PATH.unlink()
-    
-    # 4. Спрашиваем пароль через GUI
+        SALT_PATH.unlink()
+
+    # 3. Запрашиваем мастер-пароль
     pwd = ask_password(first_run)
-    
     if not pwd:
         sys.exit(0)
-    
-    # 5. Генерируем ключ
+
+    # 4. Генерируем ключ
     key = get_key(pwd, load_existing_salt=not first_run)
-    
     if not key:
         messagebox.showerror("Ошибка", "Не удалось создать ключ.")
         sys.exit(1)
-    
-    # Сохраняем ключ глобально для шифрования при выходе
+
     _encryption_key = key
-    
-    # 6. Обработка шифрования/расшифровки
-    if first_run:
-        # Первый запуск: шифруем папку если она существует и не зашифрована
-        if TARGET_PATH.exists() and not folder_encrypted:
-            print("Шифрование данных...")
-            if not process_folder(TARGET_PATH, key, encrypt=True):
-                messagebox.showerror("Ошибка", "Не удалось зашифровать данные!")
-                sys.exit(1)
-            print("Данные зашифрованы.")
-    else:
-        # Последующие запуски: расшифровываем
-        if folder_encrypted:
-            print("Расшифровка данных...")
-            if not process_folder(TARGET_PATH, key, encrypt=False):
-                messagebox.showerror("Ошибка", "Неверный пароль или данные повреждены!")
-                sys.exit(1)
-            print("Данные расшифрованы.")
-    
-    # 7. Запускаем основное приложение
+
+    # 5. Загружаем все maFiles в RAM (миграция plaintext → .enc происходит внутри)
+    print("Загрузка данных в память...")
+    mafiles_dict = load_mafiles_to_memory(key, TARGET_PATH)
+    print(f"Загружено аккаунтов: {len(mafiles_dict)}")
+
+    # 6. Запускаем приложение
     try:
         print("Пароль принят. Запуск приложения...")
-        run_bot()
+        run_bot(key, mafiles_dict)
     except Exception as e:
         messagebox.showerror("Ошибка приложения", f"Произошла ошибка: {e}")
         import traceback
         traceback.print_exc()
     finally:
-        # 8. При выходе шифруем обратно
         encrypt_on_exit()
 

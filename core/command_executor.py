@@ -3,9 +3,7 @@
 Выполняет команды через steampy.
 """
 import asyncio
-import json
 import logging
-from pathlib import Path
 from typing import Dict, Any, Optional
 
 from core.account_manager import AccountManager
@@ -43,11 +41,11 @@ class CommandExecutor:
 
     def __init__(
             self,
-            mafiles_dir: str,
+            mafiles_dict: Dict[str, dict],
             proxy_manager: ProxyManager,
             account_manager: AccountManager
     ):
-        self.mafiles_dir = mafiles_dir
+        self._mafiles_dict = mafiles_dict
         self.proxy_manager = proxy_manager
         self.account_manager = account_manager
         self.logger = logging.getLogger("CommandExecutor")
@@ -154,34 +152,22 @@ class CommandExecutor:
 
         # Получаем данные аккаунта
         password = self.account_manager.get_password(login)
-        mafile_path = self.account_manager.get_mafile_path(login)
         api_key = self.account_manager.get_api_key(login)
         login_cookies = self.account_manager.get_login_cookies(login)
 
         if not password:
-            self.logger.error(f"Для {login} не найден пароль в maFiles/accounts.json")
-            return None
-
-        if not mafile_path:
-            self.logger.error(f"Для {login} не найден путь к maFile в maFiles/accounts.json")
+            self.logger.error(f"Для {login} не найден пароль в accounts.json.enc")
             return None
 
         if not api_key:
-            self.logger.error(f"Для {login} не найден API key в maFiles/accounts.json")
+            self.logger.error(f"Для {login} не найден API key в accounts.json.enc")
             return None
 
-        # Проверяем, что maFile существует
-        mafile_path_obj = Path(mafile_path)
-        if not mafile_path_obj.exists():
-            self.logger.error(f"maFile не найден по пути: {mafile_path}")
-            return None
-
-        # Читаем maFile
-        try:
-            with open(mafile_path_obj, "r", encoding="utf-8") as f:
-                ma_data = json.load(f)
-        except Exception as e:
-            self.logger.error(f"Ошибка чтения maFile для {login}: {e}")
+        # Читаем maFile из памяти
+        login_lower = login.lower()
+        ma_data = self._mafiles_dict.get(login_lower) or self._mafiles_dict.get(login)
+        if ma_data is None:
+            self.logger.error(f"maFile для {login} не найден в памяти")
             return None
 
         steamid = ma_data.get("Session", {}).get("SteamID")

@@ -36,30 +36,27 @@ from gui.main_window import AgentGUI
 
 class Application:
     """Главное приложение."""
-    
-    def __init__(self, on_close_callback=None):
-        # Пути
-        # Определяем базовую директорию: для .exe - папка с exe, для .py - папка со скриптом
+
+    def __init__(self, fernet_key: bytes, mafiles_dict: dict, on_close_callback=None):
         if getattr(sys, 'frozen', False):
-            # Запущено как .exe
             self.base_dir = Path(sys.executable).parent
         else:
-            # Запущено как .py скрипт
             self.base_dir = Path(__file__).parent
+
         self.config_path = self.base_dir / "config" / "config.json"
         self.proxies_path = self.base_dir / "config" / "proxies.json"
         self.mafiles_dir = self.base_dir / "maFiles"
-        self.accounts_path = self.base_dir / "maFiles" / "accounts.json"
-        
-        # Callback для закрытия (используется launcher для шифрования)
+        self.accounts_storage_path = self.mafiles_dir / "accounts.json.enc"
+
         self.on_close_callback = on_close_callback
-        
-        # Агент
+
         self.agent = Agent(
             str(self.config_path),
             str(self.proxies_path),
             str(self.mafiles_dir),
-            str(self.accounts_path)
+            fernet_key=fernet_key,
+            mafiles_dict=mafiles_dict,
+            accounts_storage_path=self.accounts_storage_path,
         )
         
         # GUI
@@ -205,16 +202,6 @@ class Application:
         self.gui.mainloop()
 
 
-def run_bot():
-    """Запускает основное приложение. Используется launcher.py."""
-    app = Application()
-    try:
-        app.run()
-    except KeyboardInterrupt:
-        logging.info("Приложение остановлено пользователем")
-        sys.exit(0)
-
-
 if __name__ == "__main__":
-    run_bot()
+    raise RuntimeError("Запускайте приложение через launcher.py")
 
