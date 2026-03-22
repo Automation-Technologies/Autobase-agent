@@ -90,7 +90,10 @@ class CommandExecutor:
             elif cmd_type == "is_session_alive":
                 result = await self._is_session_alive(steam_client)
             elif cmd_type == "make_offer_with_url":
-                result = await self._make_offer_with_url(steam_client, args)
+                result = {
+                    "status": "error",
+                    "error": "make_offer_with_url отключён в агентском режиме"
+                }
             elif cmd_type == "market_fetch_price":
                 result = await self._market_fetch_price(steam_client, args)
             elif cmd_type == "market_create_buy_order":
@@ -398,60 +401,6 @@ class CommandExecutor:
                     raise
 
         return {"status": "error", "error": "Не удалось получить баланс после 5 попыток"}
-
-    async def _make_offer_with_url(self, client: SteamClient, args: Dict[str, Any]) -> Dict[str, Any]:
-        """Создать трейд-оффер по URL. Контракт: trade_offer_url, items_from_me, items_from_them, message. В каждом item: assetid (или asset_id), appid (или app_id), contextid (или context_id), amount."""
-        from steampy.models import Asset, GameOptions
-
-        if "trade_offer_url" not in args:
-            return {"status": "error", "error": "Не указан trade_offer_url"}
-        if "message" not in args:
-            return {"status": "error", "error": "Не указан message"}
-        trade_offer_url = args["trade_offer_url"]
-        items_from_me = args.get("items_from_me")
-        items_from_them = args.get("items_from_them")
-        message = args["message"]
-
-        if items_from_me is None:
-            items_from_me = []
-        if items_from_them is None:
-            items_from_them = []
-
-        def _item_to_asset(item: dict) -> Asset:
-            app_id = item.get("appid") or item.get("app_id")
-            context_id = item.get("contextid") or item.get("context_id")
-            asset_id = item.get("assetid") or item.get("asset_id")
-            amount = item.get("amount")
-            if app_id is None or context_id is None or asset_id is None or amount is None:
-                raise ValueError(
-                    "В каждом item обязательны: appid (или app_id), contextid (или context_id), assetid (или asset_id), amount"
-                )
-            return Asset(asset_id, GameOptions(app_id, context_id), int(amount))
-
-        try:
-            assets_from_me = [_item_to_asset(item) for item in items_from_me if isinstance(item, dict)]
-            assets_from_them = [_item_to_asset(item) for item in items_from_them if isinstance(item, dict)]
-        except ValueError as e:
-            return {"status": "error", "error": str(e)}
-
-        loop = asyncio.get_event_loop()
-
-        try:
-            response = await loop.run_in_executor(
-                None,
-                client.make_offer_with_url,
-                assets_from_me,
-                assets_from_them,
-                trade_offer_url,
-                message
-            )
-            return {
-                "status": "success",
-                "result": response
-            }
-        except Exception as e:
-            self.logger.error(f"Ошибка создания трейд-оффера: {e}", exc_info=True)
-            return {"status": "error", "error": str(e)}
 
     async def _market_fetch_price(self, client: SteamClient, args: Dict[str, Any]) -> Dict[str, Any]:
         """Получить цену предмета."""
