@@ -116,8 +116,10 @@ class CommandExecutor:
                 result = await self._market_get_history(steam_client, args)
             elif cmd_type == "market_fetch_price_history":
                 result = await self._market_fetch_price_history(steam_client, args)
-            elif cmd_type == "get_session_id":
-                result = await self._get_session_id(steam_client)
+            elif cmd_type == "market_buy_listing":
+                result = await self._market_buy_listing(steam_client, args)
+            elif cmd_type == "market_get_listings_by_name":
+                result = await self._market_get_listings_by_name(steam_client, args)
             else:
                 result = {"status": "error", "error": f"Неизвестная команда: {cmd_type}"}
 
@@ -738,25 +740,110 @@ class CommandExecutor:
             self.logger.error(f"Ошибка получения истории цен: {e}", exc_info=True)
             return {"status": "error", "error": str(e)}
 
-    async def _get_session_id(self, client: SteamClient) -> Dict[str, Any]:
-        """Вернуть sessionid, как это делает SteamClient._get_session_id()."""
+    async def _market_buy_listing(self, client: SteamClient, args: Dict[str, Any]) -> Dict[str, Any]:
+        """Покупка конкретного листинга с поддержкой мобильного подтверждения на стороне агента."""
+        import time
+        import urllib.parse
+        from steampy.exceptions import ApiException
+        from steampy.models import SteamUrl
+        from steampy.confirmation import ConfirmationExecutor
+
+        market_name = args.get("market_name")
+        market_id = args.get("market_id")
+        price = args.get("price")
+        fee = args.get("fee")
+        app_id = args.get("app_id")
+        currency_value = args.get("currency")
+
+        if not all([market_name, market_id, price is not None, fee is not None, app_id, currency_value is not None]):
+            return {"status": "error", "error": "Не хватает обязательных параметров: market_name, market_id, price, fee, app_id, currency"}
+
         loop = asyncio.get_event_loop()
 
+        def _do_buy():
+            session_id = client._get_session_id()
+            data = {
+                'sessionid': session_id,
+                'currency': currency_value,
+                'subtotal': price - fee,
+                'fee': fee,
+                'total': price,
+                'quantity': '1',
+                'confirmation': '0'
+            }
+            headers = {
+                'Referer': f'{SteamUrl.COMMUNITY_URL}/market/listings/{app_id}/{urllib.parse.quote(market_name)}',
+            }
+            url = f'{SteamUrl.COMMUNITY_URL}/market/buylisting/{market_id}'
+
+            resp = client._session.post(url, data=data, headers=headers)
+            time.sleep(5.4)
+            response = resp.json()
+
+            if response.get("need_confirmation") or response.get("success") == 22:
+                steam_guard_data = client.steam_guard
+                if not steam_guard_data:
+                    raise ApiException("Требуется мобильное подтверждение, но данные steam_guard отсутствуют")
+
+                if isinstance(steam_guard_data, str):
+                    import json as _json
+                    steam_guard_data = _json.loads(steam_guard_data)
+
+                confirmation_id = response["confirmation"]["confirmation_id"]
+                confirmation_executor = ConfirmationExecutor(
+                    steam_guard_data['identity_secret'],
+                    steam_guard_data['steamid'],
+                    client._session
+                )
+                time.sleep(5.4)
+                if not confirmation_executor.confirm_by_id(confirmation_id):
+                    raise ApiException("Не удалось подтвердить действие через Steam Guard")
+
+                data["confirmation"] = confirmation_id
+                time.sleep(5.4)
+                second_resp = client._session.post(url, data=data, headers=headers)
+                second_response = second_resp.json()
+
+                if second_response.get("wallet_info", {}).get("success") == 1:
+                    return second_response
+                else:
+                    raise ApiException(f"Buy_item failed after confirmation: {second_response}")
+
+            return response
+
         try:
-            session_id = await loop.run_in_executor(
-                None,
-                client._get_session_id  # type: ignore[attr-defined]
-            )
-            return {
-                "status": "success",
-                "result": session_id
-            }
+            result = await loop.run_in_executor(None, _do_buy)
+            return {"status": "success", "result": result}
         except Exception as e:
-            self.logger.error(f"Ошибка получения session_id: {e}", exc_info=True)
-            return {
-                "status": "error",
-                "error": str(e)
-            }
+            self.logger.error(f"Ошибка покупки листинга: {e}", exc_info=True)
+            return {"status": "error", "error": str(e)}
+
+    async def _market_get_listings_by_name(self, client: SteamClient, args: Dict[str, Any]) -> Dict[str, Any]:
+        """Получить сырые данные листингов по имени предмета для MarketIdResolver."""
+        import urllib.parse
+
+        market_name = args.get("market_name")
+        app_id = args.get("app_id")
+        currency_value = args.get("currency")
+
+        if not market_name or not app_id or currency_value is None:
+            return {"status": "error", "error": "Не указаны market_name, app_id или currency"}
+
+        loop = asyncio.get_event_loop()
+
+        def _do_get():
+            encoded_skin = urllib.parse.quote(market_name, safe='')
+            url = f"https://steamcommunity.com/market/listings/{app_id}/{encoded_skin}/render/"
+            params = {'query': '', 'start': 0, 'count': 10, 'currency': currency_value}
+            resp = client._session.get(url, params=params)
+            return resp.json()
+
+        try:
+            result = await loop.run_in_executor(None, _do_get)
+            return {"status": "success", "result": result}
+        except Exception as e:
+            self.logger.error(f"Ошибка получения листингов: {e}", exc_info=True)
+            return {"status": "error", "error": str(e)}
 
     def cleanup(self) -> None:
         """Закрыть все соединения."""
