@@ -341,12 +341,14 @@ class AccountsFrame(ctk.CTkFrame):
         if not api_key:
             return
 
-        self.on_save_account_credentials(
+        is_saved = self.on_save_account_credentials(
             self.dropped_login,
             password,
             str(self.dropped_mafile_path),
             api_key,
         )
+        if not is_saved:
+            return
 
         self.password_entry.delete(0, "end")
         self.api_key_entry.delete(0, "end")

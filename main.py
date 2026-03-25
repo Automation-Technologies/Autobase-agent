@@ -159,10 +159,13 @@ class Application:
         accounts = self.agent.get_accounts_with_proxies()
         self.gui.update_accounts_list(accounts)
     
-    def save_account_credentials(self, login: str, password: str, mafile_path: str, api_key: str) -> None:
+    def save_account_credentials(self, login: str, password: str, mafile_path: str, api_key: str) -> bool:
         """Сохранить данные аккаунта и обновить список в UI."""
-        self.agent.save_account_credentials(login, password, mafile_path, api_key)
+        is_saved = self.agent.save_account_credentials(login, password, mafile_path, api_key)
+        if not is_saved:
+            return False
         self.trigger_ingestion()
+        return True
     
     def delete_account(self, login: str) -> None:
         """Удалить аккаунт и обновить список в UI."""

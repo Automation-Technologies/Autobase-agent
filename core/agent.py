@@ -314,19 +314,24 @@ class Agent:
         self.config_manager.update_agent_token(agent_token)
         self._log("✅ Конфигурация сохранена")
 
-    def save_account_credentials(self, login: str, password: str, mafile_path: str, api_key: str) -> None:
+    def save_account_credentials(self, login: str, password: str, mafile_path: str, api_key: str) -> bool:
         """
         Сохранить данные аккаунта.
         Читает maFile с диска, добавляет в in-memory словарь,
         шифрует и сохраняет как .enc — plaintext на диске не остаётся.
         """
+        agent_token = self.config_manager.get_agent_token()
+        if not agent_token:
+            self._log("❌ Ошибка: заполните Agent Token в настройках")
+            return False
+
         source = Path(mafile_path)
         try:
             with open(source, "r", encoding="utf-8") as f:
                 ma_data = json.load(f)
         except Exception as e:
             self._log(f"❌ Не удалось прочитать maFile {mafile_path}: {e}")
-            return
+            return False
 
         login_lower = login.lower()
         self._mafiles_dict[login_lower] = ma_data
@@ -341,6 +346,7 @@ class Agent:
 
         self.account_manager.set_account(login_lower, password, api_key)
         self._log(f"✅ Данные аккаунта сохранены для {login}")
+        return True
 
     def delete_account(self, login: str) -> None:
         """Полностью удалить аккаунт: .enc файл с диска, из памяти, прокси и запись в accounts.json.enc."""
