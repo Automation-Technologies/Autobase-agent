@@ -14,6 +14,11 @@ class UpdaterError(RuntimeError):
     pass
 
 
+def _configure_stdio_utf8() -> None:
+    sys.stdout.reconfigure(encoding="utf-8", errors="strict")
+    sys.stderr.reconfigure(encoding="utf-8", errors="strict")
+
+
 @dataclass(frozen=True)
 class UpdaterConfig:
     github_repo: str
@@ -251,6 +256,7 @@ def _build_config() -> UpdaterConfig:
 
 def main() -> int:
     try:
+        _configure_stdio_utf8()
         config = _build_config()
         project_root = Path(__file__).resolve().parent
         return Updater(config, project_root).run()
