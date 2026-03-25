@@ -126,7 +126,7 @@ class AgentGUI(TkinterDnD.Tk):
         # Кнопки навигации
         self.btn_dashboard = ctk.CTkButton(
             self.sidebar_frame,
-            text="📊 Дашборд",
+            text="📊 Главная",
             command=self.show_dashboard,
             height=40,
             font=ctk.CTkFont(size=14)
