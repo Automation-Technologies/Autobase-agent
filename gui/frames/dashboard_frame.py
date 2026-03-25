@@ -8,12 +8,11 @@ from typing import Callable
 class DashboardFrame(ctk.CTkFrame):
     """Главный дашборд агента."""
     
-    def __init__(self, master, on_start: Callable, on_stop: Callable, on_ingest: Callable):
+    def __init__(self, master, on_start: Callable, on_stop: Callable):
         super().__init__(master, fg_color="transparent")
         
         self.on_start = on_start
         self.on_stop = on_stop
-        self.on_ingest = on_ingest
         
         self.is_running = False
         
@@ -46,18 +45,6 @@ class DashboardFrame(ctk.CTkFrame):
         )
         self.toggle_btn.pack(pady=10, padx=50, fill="x")
         
-        # Кнопка добавления аккаунтов
-        self.ingest_btn = ctk.CTkButton(
-            self,
-            text="➕ Добавить новые аккаунты в бота",
-            height=40,
-            fg_color="#0066CC",
-            hover_color="#0055AA",
-            font=ctk.CTkFont(size=14),
-            command=self._trigger_ingestion
-        )
-        self.ingest_btn.pack(pady=5, padx=50, fill="x")
-        
         # Лог событий
         log_label = ctk.CTkLabel(
             self,
@@ -78,10 +65,6 @@ class DashboardFrame(ctk.CTkFrame):
             self.on_stop()
         else:
             self.on_start()
-    
-    def _trigger_ingestion(self) -> None:
-        """Запустить процесс добавления аккаунтов."""
-        self.on_ingest()
     
     def update_status(self, connected: bool) -> None:
         """Обновить статус подключения."""

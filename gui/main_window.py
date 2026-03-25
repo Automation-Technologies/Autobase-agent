@@ -16,7 +16,6 @@ class AgentGUI(TkinterDnD.Tk):
         mafiles_dir: str,
         on_start_agent: Callable,
         on_stop_agent: Callable,
-        on_trigger_ingestion: Callable,
         on_save_config: Callable,
         on_save_proxy: Callable,
         on_remove_proxy: Callable,
@@ -29,7 +28,6 @@ class AgentGUI(TkinterDnD.Tk):
         self.mafiles_dir = Path(mafiles_dir)
         self.on_start_agent = on_start_agent
         self.on_stop_agent = on_stop_agent
-        self.on_trigger_ingestion = on_trigger_ingestion
         self.on_save_config = on_save_config
         self.on_save_proxy = on_save_proxy
         self.on_remove_proxy = on_remove_proxy
@@ -75,8 +73,7 @@ class AgentGUI(TkinterDnD.Tk):
         self.frame_dashboard = DashboardFrame(
             self.main_frame,
             on_start=self.on_start_agent,
-            on_stop=self.on_stop_agent,
-            on_ingest=self.on_trigger_ingestion
+            on_stop=self.on_stop_agent
         )
         
         self.frame_accounts = AccountsFrame(
