@@ -18,9 +18,10 @@ class MaFileScanner:
         """
         accounts: List[Dict] = []
         for login, data in self._mafiles_dict.items():
+            sid = data.get("Session", {}).get("SteamID")
             accounts.append({
                 "login": login,
-                "steamid": data.get("Session", {}).get("SteamID", "Unknown"),
+                "steamid": str(sid) if sid is not None else "Unknown",
                 "mafile_data": data,
             })
         return accounts

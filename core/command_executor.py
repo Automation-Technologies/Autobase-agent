@@ -7,6 +7,7 @@ import logging
 from typing import Dict, Any, Optional
 
 from core.account_manager import AccountManager
+from core.mafile_steam_guard import MafileSteamGuard
 from core.proxy_manager import ProxyManager
 from steampy.client import SteamClient
 
@@ -175,20 +176,11 @@ class CommandExecutor:
             self.logger.error(f"maFile для {login} не найден в памяти")
             return None
 
-        steamid = ma_data.get("Session", {}).get("SteamID")
-        shared_secret = ma_data.get("shared_secret")
-        identity_secret = ma_data.get("identity_secret")
-
-        if not steamid or not shared_secret or not identity_secret:
-            self.logger.error(
-                f"maFile для {login} не содержит необходимых полей (steamid/shared_secret/identity_secret)")
+        try:
+            steam_guard_data = MafileSteamGuard.build_dict(ma_data, login)
+        except ValueError as e:
+            self.logger.error(str(e))
             return None
-
-        steam_guard_data = {
-            "steamid": steamid,
-            "shared_secret": shared_secret,
-            "identity_secret": identity_secret,
-        }
 
         # Получаем прокси
         proxy_string = self.proxy_manager.get_proxy_for_login(login)
