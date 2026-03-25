@@ -44,10 +44,14 @@ class WebSocketClient:
             try:
                 await self.websocket.send(json.dumps({"type": "ping"}))
                 await asyncio.sleep(40)
-            except websockets.exceptions.ConnectionClosed:
+            except websockets.exceptions.ConnectionClosed as e:
+                self.logger.warning(
+                    "Heartbeat: connection closed "
+                    f"(type={type(e).__name__}, code={getattr(e, 'code', None)}, reason={getattr(e, 'reason', None)})"
+                )
                 break
             except Exception as e:
-                self.logger.debug(f"Heartbeat error: {e}")
+                self.logger.error(f"Heartbeat error: {type(e).__name__}: {e}", exc_info=True)
                 break
 
     async def connect(self, manifest: List[str]) -> None:
@@ -96,7 +100,19 @@ class WebSocketClient:
                     "type": "manifest",
                     "logins": manifest
                 }
-                await websocket.send(json.dumps(manifest_msg))
+                try:
+                    await websocket.send(json.dumps(manifest_msg))
+                except websockets.exceptions.ConnectionClosed as e:
+                    self.logger.error(
+                        "Failed to send manifest: connection closed "
+                        f"(type={type(e).__name__}, code={getattr(e, 'code', None)}, reason={getattr(e, 'reason', None)})"
+                    )
+                    self.on_status_change_callback(False)
+                    return
+                except Exception as e:
+                    self.logger.error(f"Failed to send manifest: {type(e).__name__}: {e}", exc_info=True)
+                    self.on_status_change_callback(False)
+                    return
                 self.logger.info(f"Манифест отправлен: {len(manifest)} логинов: {manifest}")
 
                 asyncio.create_task(self._heartbeat_loop())
@@ -105,10 +121,10 @@ class WebSocketClient:
                 await self._listen_loop()
 
         except websockets.exceptions.WebSocketException as e:
-            self.logger.error(f"WebSocket ошибка: {e}")
+            self.logger.error(f"WebSocket ошибка: {type(e).__name__}: {e}", exc_info=True)
             self.on_status_change_callback(False)
         except Exception as e:
-            self.logger.error(f"Неожиданная ошибка: {e}")
+            self.logger.error(f"Неожиданная ошибка: {type(e).__name__}: {e}", exc_info=True)
             self.on_status_change_callback(False)
         finally:
             self.is_running = False
@@ -136,20 +152,47 @@ class WebSocketClient:
                     response["request_id"] = request_id
 
                 # Отправляем ответ серверу (с поддержкой Decimal через DecimalEncoder)
-                await self.websocket.send(json.dumps(response, cls=DecimalEncoder))
-                self.logger.debug(f"Ответ отправлен для request_id={request_id}")
+                self.logger.info(
+                    "Sending response to server "
+                    f"(cmd_type={cmd_type}, login={login}, request_id={request_id}, response_status={response.get('status')})"
+                )
+                try:
+                    await self.websocket.send(json.dumps(response, cls=DecimalEncoder))
+                except websockets.exceptions.ConnectionClosed as e:
+                    self.logger.error(
+                        "Send failed: connection closed "
+                        f"(type={type(e).__name__}, code={getattr(e, 'code', None)}, reason={getattr(e, 'reason', None)}) "
+                        f"for request_id={request_id}, cmd_type={cmd_type}, login={login}"
+                    )
+                    self.on_status_change_callback(False)
+                    break
+                except Exception as e:
+                    self.logger.error(
+                        f"Send failed for request_id={request_id}, cmd_type={cmd_type}, login={login}: "
+                        f"{type(e).__name__}: {e}",
+                        exc_info=True
+                    )
+                    self.on_status_change_callback(False)
+                    break
+                self.logger.info(f"Response sent to server (request_id={request_id})")
 
-            except websockets.exceptions.ConnectionClosed:
-                self.logger.warning("Соединение закрыто сервером")
+            except websockets.exceptions.ConnectionClosed as e:
+                self.logger.warning(
+                    "Connection closed while waiting for server message "
+                    f"(type={type(e).__name__}, code={getattr(e, 'code', None)}, reason={getattr(e, 'reason', None)})"
+                )
                 self.on_status_change_callback(False)
                 break
             except Exception as e:
-                self.logger.error(f"Ошибка обработки команды: {e}", exc_info=True)
+                self.logger.error(f"Ошибка обработки команды: {type(e).__name__}: {e}", exc_info=True)
 
     async def disconnect(self) -> None:
         """Отключиться от сервера."""
         self.is_running = False
         if self.websocket:
-            await self.websocket.close()
+            try:
+                await self.websocket.close()
+            except Exception as e:
+                self.logger.error(f"Error during websocket close: {type(e).__name__}: {e}", exc_info=True)
             self.websocket = None
         self.on_status_change_callback(False)
