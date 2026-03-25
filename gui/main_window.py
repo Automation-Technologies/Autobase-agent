@@ -154,11 +154,20 @@ class AgentGUI(TkinterDnD.Tk):
         # Версия внизу
         self.version_label = ctk.CTkLabel(
             self.sidebar_frame,
-            text="v1.0.0",
+            text=self._get_app_version_text(),
             font=ctk.CTkFont(size=10),
             text_color="gray"
         )
         self.version_label.grid(row=5, column=0, padx=20, pady=(0, 20))
+
+    def _get_app_version_text(self) -> str:
+        version_path = Path(__file__).resolve().parents[1] / "version.txt"
+        version_raw = version_path.read_text(encoding="utf-8").strip()
+        if version_raw == "":
+            raise ValueError("version.txt пустой.")
+        if not version_raw.startswith("v"):
+            raise ValueError("version.txt должен быть в формате vX.Y.Z (например, v1.0.0).")
+        return version_raw
     
     def show_dashboard(self) -> None:
         """Показать дашборд."""
