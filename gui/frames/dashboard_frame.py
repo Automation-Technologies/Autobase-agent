@@ -2,6 +2,7 @@
 Фрейм дашборда.
 """
 import customtkinter as ctk
+from datetime import datetime
 from typing import Callable
 
 
@@ -56,7 +57,8 @@ class DashboardFrame(ctk.CTkFrame):
         
         self.log_box = ctk.CTkTextbox(self, height=250, font=ctk.CTkFont(size=11))
         self.log_box.pack(pady=(0, 20), padx=20, fill="both", expand=True)
-        self.log_box.insert("0.0", "🟢 Система готова к работе.\n")
+        now = datetime.now().strftime("%H:%M:%S")
+        self.log_box.insert("0.0", f"[{now}] 🟢 Система готова к работе.\n")
         self.log_box.configure(state="disabled")
     
     def _toggle_agent(self) -> None:
@@ -93,8 +95,9 @@ class DashboardFrame(ctk.CTkFrame):
     
     def add_log(self, message: str) -> None:
         """Добавить сообщение в лог."""
+        now = datetime.now().strftime("%H:%M:%S")
         self.log_box.configure(state="normal")
-        self.log_box.insert("end", f"{message}\n")
+        self.log_box.insert("end", f"[{now}] {message}\n")
         self.log_box.see("end")
         self.log_box.configure(state="disabled")
 
