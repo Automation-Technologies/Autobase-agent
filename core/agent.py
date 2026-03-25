@@ -373,12 +373,12 @@ class Agent:
         cmd_type = command.get("cmd")
         login = command.get("account_login")
 
-        self._log(f"📥 Команда: {cmd_type} для {login}")
+        self._log(f"[{login}] 📥 Команда: {cmd_type}")
 
         # Выполняем команду
         result = await self.command_executor.execute_command(command)
 
-        self._log(f"📤 Ответ: {result.get('status')}")
+        self._log(f"[{login}] 📤 Ответ: {result.get('status')}")
 
         return result
 
