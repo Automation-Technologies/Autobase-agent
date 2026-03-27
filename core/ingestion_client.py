@@ -6,17 +6,27 @@
 - REGISTER: зарегистрировать новые аккаунты с балансом
 """
 
+import ssl
 from typing import List, Dict, Any
 
 import aiohttp
+import certifi
 
 
 class IngestionClient:
     """HTTP‑клиент для Smart Ingestion."""
 
+    _HTTP_TOTAL_TIMEOUT_SECONDS = 120
+    _HTTP_CONNECT_TIMEOUT_SECONDS = 30
+
     def __init__(self, base_url: str, agent_token: str) -> None:
         self._base_url = base_url.rstrip("/")
         self._agent_token = agent_token
+        self._ssl_context = ssl.create_default_context(cafile=certifi.where())
+        self._timeout = aiohttp.ClientTimeout(
+            total=self._HTTP_TOTAL_TIMEOUT_SECONDS,
+            connect=self._HTTP_CONNECT_TIMEOUT_SECONDS,
+        )
 
     async def check_existence(self, accounts: List[Dict[str, str]]) -> Dict[str, Any]:
         """
@@ -40,8 +50,8 @@ class IngestionClient:
             "accounts": accounts,
         }
 
-        async with aiohttp.ClientSession() as session:
-            async with session.post(url, json=payload) as resp:
+        async with aiohttp.ClientSession(timeout=self._timeout) as session:
+            async with session.post(url, json=payload, ssl=self._ssl_context) as resp:
                 if resp.status == 401:
                     raise aiohttp.ClientResponseError(
                         request_info=resp.request_info,
@@ -80,8 +90,8 @@ class IngestionClient:
             "accounts": accounts,
         }
 
-        async with aiohttp.ClientSession() as session:
-            async with session.post(url, json=payload) as resp:
+        async with aiohttp.ClientSession(timeout=self._timeout) as session:
+            async with session.post(url, json=payload, ssl=self._ssl_context) as resp:
                 if resp.status == 401:
                     raise aiohttp.ClientResponseError(
                         request_info=resp.request_info,

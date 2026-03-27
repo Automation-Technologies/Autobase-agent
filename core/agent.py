@@ -154,6 +154,9 @@ class Agent:
                 self._log("❌ Токен не рабочий")
                 return
             raise
+        except (asyncio.TimeoutError, aiohttp.ClientError) as e:
+            self._log(f"❌ CHECK_EXISTENCE: {type(e).__name__}: {e}")
+            return
 
         existing = check_result.get("existing", [])
         new_logins = check_result.get("new", [])
@@ -280,6 +283,9 @@ class Agent:
                 self._log("❌ Токен не рабочий")
                 return
             raise
+        except (asyncio.TimeoutError, aiohttp.ClientError) as e:
+            self._log(f"❌ REGISTER: {type(e).__name__}: {e}")
+            return
 
         created = register_result.get("created", [])
         skipped = register_result.get("skipped", [])

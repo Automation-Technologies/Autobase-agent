@@ -7,6 +7,7 @@ import logging
 import threading
 from pathlib import Path
 import sys
+from concurrent.futures import Future
 
 # Создаем необходимые папки ДО настройки логирования
 # Определяем базовую директорию: для .exe - папка с exe, для .py - папка со скриптом
@@ -83,6 +84,8 @@ class Application:
         # Asyncio loop для агента
         self.loop = None
         self.agent_thread = None
+        self._ingestion_lock = threading.Lock()
+        self._is_ingestion_running = False
         
         # Загружаем данные в GUI
         self._load_initial_data()
@@ -128,16 +131,53 @@ class Application:
         asyncio.run_coroutine_threadsafe(self.agent.stop(), self.loop)
     
     def trigger_ingestion(self) -> None:
-        """Запустить ingestion."""
+        """
+        Запустить ingestion без блокировки GUI-потока.
+        Раньше при незапущенном агенте вызывался asyncio.run() в main thread — окно «Not Responding».
+        """
+        log = logging.getLogger("Agent")
+
+        with self._ingestion_lock:
+            if self._is_ingestion_running:
+                self.on_log("⚠️ Ingestion уже выполняется, повторный запуск пропущен")
+                return
+            self._is_ingestion_running = True
+
+        def _refresh_accounts_list() -> None:
+            accounts = self.agent.get_accounts_with_proxies()
+            self.gui.after(0, lambda: self.gui.update_accounts_list(accounts))
+
+        def _finish_ingestion() -> None:
+            with self._ingestion_lock:
+                self._is_ingestion_running = False
+
+        def _on_ingestion_done(fut: Future) -> None:
+            try:
+                fut.result()
+            except Exception:
+                log.exception("Ingestion: ошибка выполнения")
+            finally:
+                _refresh_accounts_list()
+                _finish_ingestion()
+
         if self.loop and self.loop.is_running():
-            asyncio.run_coroutine_threadsafe(self.agent.trigger_ingestion(), self.loop)
-        else:
-            # Если агент не запущен, запускаем ingestion в новом loop
-            asyncio.run(self.agent.trigger_ingestion())
-        
-        # Обновляем список аккаунтов
-        accounts = self.agent.get_accounts_with_proxies()
-        self.gui.update_accounts_list(accounts)
+            scheduled = asyncio.run_coroutine_threadsafe(
+                self.agent.trigger_ingestion(),
+                self.loop,
+            )
+            scheduled.add_done_callback(_on_ingestion_done)
+            return
+
+        def _worker() -> None:
+            try:
+                asyncio.run(self.agent.trigger_ingestion())
+            except Exception:
+                log.exception("Ingestion: ошибка выполнения")
+            finally:
+                _refresh_accounts_list()
+                _finish_ingestion()
+
+        threading.Thread(target=_worker, daemon=True).start()
     
     def save_config(self, agent_token: str) -> None:
         """Сохранить конфигурацию."""
