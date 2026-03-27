@@ -9,6 +9,11 @@ from pathlib import Path
 import sys
 from concurrent.futures import Future
 
+# На Windows Server ProactorLoop чаще отваливается с WinError 121 при длительных сокетах.
+# SelectorLoop стабильнее для websocket-соединений в этом проекте.
+if sys.platform == "win32":
+    asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
+
 # Создаем необходимые папки ДО настройки логирования
 # Определяем базовую директорию: для .exe - папка с exe, для .py - папка со скриптом
 if getattr(sys, 'frozen', False):

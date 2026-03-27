@@ -41,6 +41,7 @@ class WebSocketClient:
         self.logger = logging.getLogger("WebSocketClient")
         self._backoff_seconds = 2
         self._max_backoff_seconds = 60
+        self._heartbeat_task: Optional[asyncio.Task] = None
 
     async def _heartbeat_loop(self) -> None:
         """Фоновая отправка 'ping' сообщений чтобы соединение между агентом и сервером не разрывалось в простое."""
@@ -48,6 +49,8 @@ class WebSocketClient:
             try:
                 await self.websocket.send(json.dumps({"type": "ping"}))
                 await asyncio.sleep(15)
+            except asyncio.CancelledError:
+                break
             except websockets.exceptions.ConnectionClosed as e:
                 self.logger.warning(
                     "Heartbeat: connection closed "
@@ -57,6 +60,20 @@ class WebSocketClient:
             except Exception as e:
                 self.logger.error(f"Heartbeat error: {type(e).__name__}: {e}", exc_info=True)
                 break
+
+    async def _stop_heartbeat(self) -> None:
+        """Остановить heartbeat задачу без утечек pending task."""
+        if self._heartbeat_task is None:
+            return
+        if not self._heartbeat_task.done():
+            self._heartbeat_task.cancel()
+            try:
+                await self._heartbeat_task
+            except asyncio.CancelledError:
+                pass
+            except Exception:
+                pass
+        self._heartbeat_task = None
 
     async def connect(self, manifest: List[str]) -> None:
         """
@@ -75,8 +92,10 @@ class WebSocketClient:
                 async with websockets.connect(
                         ws_url,
                         extra_headers=headers,
-                        ping_interval=20,
-                        ping_timeout=20,
+                        ping_interval=15,
+                        ping_timeout=15,
+                        open_timeout=15,
+                        close_timeout=10,
                         ssl=ssl_context
                 ) as websocket:
                     self.websocket = websocket
@@ -91,7 +110,7 @@ class WebSocketClient:
                     await websocket.send(json.dumps(manifest_msg))
                     self.logger.info(f"Манифест отправлен: {len(manifest)} логинов: {manifest}")
 
-                    asyncio.create_task(self._heartbeat_loop())
+                    self._heartbeat_task = asyncio.create_task(self._heartbeat_loop())
                     backoff = self._backoff_seconds
 
                     # Слушаем команды
@@ -107,6 +126,7 @@ class WebSocketClient:
                 self.logger.error(f"Неожиданная ошибка: {type(e).__name__}: {e}", exc_info=True)
                 self.on_status_change_callback(False)
             finally:
+                await self._stop_heartbeat()
                 self.websocket = None
 
             if self.is_running:
@@ -181,6 +201,7 @@ class WebSocketClient:
     async def disconnect(self) -> None:
         """Отключиться от сервера."""
         self.is_running = False
+        await self._stop_heartbeat()
         if self.websocket:
             try:
                 await self.websocket.close()
