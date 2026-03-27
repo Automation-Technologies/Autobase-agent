@@ -4,9 +4,11 @@ WebSocket клиент для связи с AutoBase сервером.
 import asyncio
 import json
 import logging
+import ssl
 from decimal import Decimal
 from typing import Callable, Optional, List
 
+import certifi
 import websockets
 from websockets.client import WebSocketClientProtocol
 
@@ -64,6 +66,7 @@ class WebSocketClient:
         self.is_running = True
         ws_url = self._build_ws_url()
         headers = {"Authorization": self.agent_token}
+        ssl_context = ssl.create_default_context(cafile=certifi.where())
         backoff = self._backoff_seconds
 
         while self.is_running:
@@ -73,7 +76,8 @@ class WebSocketClient:
                         ws_url,
                         extra_headers=headers,
                         ping_interval=20,
-                        ping_timeout=20
+                        ping_timeout=20,
+                        ssl=ssl_context
                 ) as websocket:
                     self.websocket = websocket
                     self.on_status_change_callback(True)
