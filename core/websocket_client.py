@@ -48,6 +48,7 @@ class WebSocketClient:
         while self.is_running and self.websocket:
             try:
                 await self.websocket.send(json.dumps({"type": "ping"}))
+                self.logger.info("Heartbeat ping sent")
                 await asyncio.sleep(15)
             except asyncio.CancelledError:
                 break
@@ -150,6 +151,10 @@ class WebSocketClient:
                 if msg_type == "ack":
                     ack_request_id = command.get("request_id")
                     self.logger.info(f"ACK received from server (request_id={ack_request_id})")
+                    continue
+
+                if msg_type == "pong":
+                    self.logger.info("Heartbeat pong received from server")
                     continue
 
                 # Извлекаем request_id из команды для ответа
