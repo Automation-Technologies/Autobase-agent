@@ -92,8 +92,11 @@ class WebSocketClient:
                 async with websockets.connect(
                         ws_url,
                         extra_headers=headers,
-                        ping_interval=15,
-                        ping_timeout=15,
+                        # Используем только прикладной heartbeat {"type":"ping"}.
+                        # Встроенные control ping/pong у websockets на некоторых
+                        # Windows Server + proxy/Nginx окружениях приводят к 1006.
+                        ping_interval=None,
+                        ping_timeout=None,
                         open_timeout=15,
                         close_timeout=10,
                         ssl=ssl_context
